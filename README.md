@@ -1,4 +1,6 @@
-# wasm4-game
+# Villagers vs Illagers
+
+TODO: Write how gaem works ong
 
 A game written in Rust for the [WASM-4](https://wasm4.org) fantasy console.
 
