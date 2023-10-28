@@ -32,6 +32,7 @@ impl Game {
     
     unsafe fn run(&mut self) {
         self.fetch_input();
+        self.move_cursor();
         self.draw_grid();
         self.draw_footer();
         self.draw_cursors();
@@ -47,6 +48,24 @@ impl Game {
             let new = current & (last ^ current);
             self.old_gamepad[index] = current;
             self.new_gamepad[index] = new;
+        }
+    }
+
+    unsafe fn move_cursor(&mut self) {
+        for index in 0..2 {
+            let x = self.new_gamepad[index];
+            
+            if x & BUTTON_UP != 0 {
+                self.cursors[index] = self.cursors[index].saturating_sub(16);
+            } else if x & BUTTON_DOWN != 0 {
+                self.cursors[index] = self.cursors[index].saturating_add(16);
+            } else if x & BUTTON_LEFT != 0 {
+                self.cursors[index] = self.cursors[index].saturating_sub(1);
+            } else if x & BUTTON_RIGHT != 0 {
+                self.cursors[index] = self.cursors[index].saturating_add(1);
+            }
+
+            self.cursors[index] = self.cursors[index].clamp(0, 191);
         }
     }
 
