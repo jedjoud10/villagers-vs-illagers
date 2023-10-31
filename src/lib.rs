@@ -152,30 +152,62 @@ impl Game {
 
             // Move cursor on grid
             let x = self.new_gamepad[index];
-            let pos = self.cursors[index];
+            let grid_pos = self.cursors[index];
             self.cursors[index] = if x & BUTTON_UP != 0 {
-                pos.saturating_sub(16)
+                grid_pos.saturating_sub(16)
             } else if x & BUTTON_DOWN != 0 {
-                pos.saturating_add(16)
+                grid_pos.saturating_add(16)
             } else if x & BUTTON_LEFT != 0 {
-                pos.saturating_sub(1)
+                grid_pos.saturating_sub(1)
             } else if x & BUTTON_RIGHT != 0 {
-                pos.saturating_add(1)
+                grid_pos.saturating_add(1)
             } else {
-                pos
+                grid_pos
             }   
             .clamp(0, 191);
 
     
             let selected = &mut self.current_selected_class[index];
+
             // Cycle current selected class
             if new & BUTTON_2 != 0 {
                 *selected += 1;
                 *selected = *selected % 3;
             }
+
+            // Place currently selected class
             if new & BUTTON_1 != 0 {
-                let points: &mut u8 = if index == 0 {&mut self.villager} else {&mut self.illager};
-                *points = points.saturating_sub(PRICES[*selected as usize + 3 * index]);
+                let points: &mut u8 = if index == 0 { &mut self.villager } else { &mut self.illager };
+
+                // make sure the cell is empty so we can place our shit there
+                if matches!(self.grid[grid_pos as usize], CellState::Empty) {
+                    // checked sub to make sure we don't cause a crash (also saves us from
+                    // manually comparing to check if we have enough points to spend) 
+                    if let Some(new_points) = points.checked_sub(PRICES[*selected as usize + 3 * index]) {
+                        *points = new_points;
+    
+                        // logic that handles setting new classes
+                        // basically overwrite the cell state, so we should have a check (even before subtracting the points) to make
+                        // sure that the position is valid
+                        let cell = &mut self.grid[grid_pos as usize];
+
+                        // "index" is play index (where 0 is villager and 1 is illager)
+                        // "selected" is the selected class index (0..3)
+                        *cell = match (index, selected) {
+                            // villager clan classes
+                            (0, 0) => CellState::VillagerClan(VillagerClan::Villager),
+                            (0, 1) => CellState::VillagerClan(VillagerClan::Farmer),
+                            (0, 2) => CellState::VillagerClan(VillagerClan::Smith),
+    
+                            // illager clan classes
+                            (1, 0) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
+                            (1, 1) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
+                            (1, 2) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
+    
+                            _ => unreachable!()
+                        };
+                    }
+                }
             }
         }
     }
@@ -232,7 +264,9 @@ impl Game {
 
             match state {
                 CellState::Empty => {},
+
                 CellState::IllagerClan(_type, state) => {
+                    // src x pos inside the sprite sheet that we will blit from
                     let src_x = match _type {
                         IllagerClan::Vindicator => 0,
                         IllagerClan::Pillager => 10,
@@ -240,6 +274,7 @@ impl Game {
                         IllagerClan::Vex => 30,
                     };
 
+                    // src y pos from the sprite sheet
                     let src_y = match state {
                         IllagerState::Idle => 0,
                         IllagerState::Action => 10,
@@ -247,7 +282,23 @@ impl Game {
 
                     blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS);
                 },
-                CellState::VillagerClan(_) => todo!(),
+
+                CellState::VillagerClan(_type) => {
+                    // src x and src y positions inside the sprite sheet
+                    let (src_x, src_y) = match _type {
+                        VillagerClan::Villager => (40, 0),
+                        VillagerClan::Farmer => (50, 0),
+                        VillagerClan::Smith => (60, 0),
+                        VillagerClan::Golem(golem) => match golem {
+                            GolemState::Attack => (60, 10),
+                            GolemState::Broken => (70, 10),
+                            GolemState::Idle => (70, 0),
+                        },
+                    };
+
+                    blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS);
+                },
+                
                 CellState::House(_) => todo!(),
             };
         }
