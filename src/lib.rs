@@ -130,18 +130,16 @@ impl Game {
             }   
             .clamp(0, 191);
 
-            
-            if new != 0 {
-                let selected = &mut self.current_selected_class[index];
-                // Cycle current selected class
-                if BUTTON_2 != 0 {
-                    *selected += 1;
-                    *selected = *selected % 3;
-                }
-                if BUTTON_1 != 0 {
-                    let points: &mut u8 = if index == 0 {&mut self.villager} else {&mut self.illager};
-                    *points -= PRICES[*selected as usize];
-                }
+    
+            let selected = &mut self.current_selected_class[index];
+            // Cycle current selected class
+            if new & BUTTON_2 != 0 {
+                *selected += 1;
+                *selected = *selected % 3;
+            }
+            if new & BUTTON_1 != 0 {
+                let points: &mut u8 = if index == 0 {&mut self.villager} else {&mut self.illager};
+                *points -= PRICES[*selected as usize];
             }
         }
     }
@@ -188,6 +186,7 @@ impl Game {
             // TODO: Draw appropriate sprite here
             match state {
                 CellState::Empty => {},
+                _ => {},
             }
         }
     }
