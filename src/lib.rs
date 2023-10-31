@@ -201,8 +201,8 @@ impl Game {
     
                             // illager clan classes
                             (1, 0) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
-                            (1, 1) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
-                            (1, 2) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
+                            (1, 1) => CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
+                            (1, 2) => CellState::IllagerClan(IllagerClan::Evoker, IllagerState::Idle),
     
                             _ => unreachable!()
                         };
