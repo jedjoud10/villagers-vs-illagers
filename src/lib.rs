@@ -10,9 +10,9 @@ static mut GAME: Option<Game> = None;
 // Price constants
 const VINDICATOR: u8 = 1;
 const VILLAGER: u8 = VINDICATOR;
-const PILLAGER: u8 = 1;
+const PILLAGER: u8 = 2;
 const FARMER: u8 = PILLAGER;
-const EVOKER: u8 = 1;
+const EVOKER: u8 = 3;
 const SMITH: u8 = EVOKER;
 
 const PRICES: [u8; 6] = [
@@ -84,8 +84,8 @@ impl Game {
         *PALETTE = [0xd7bbad, 0xbf8a6e, 0x57795b, 0x26180e];
 
         Self {
-            villager: 5,
-            illager: 5,
+            villager: 9,
+            illager: 9,
             cursors: [0; 2],
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
@@ -139,7 +139,7 @@ impl Game {
             }
             if new & BUTTON_1 != 0 {
                 let points: &mut u8 = if index == 0 {&mut self.villager} else {&mut self.illager};
-                *points -= PRICES[*selected as usize];
+                *points = points.saturating_sub(PRICES[*selected as usize + 3 * index]);
             }
         }
     }
@@ -153,6 +153,7 @@ impl Game {
         text("V: ", 2, 122);
         text("I: ", 2, 132);
         text([self.villager + 48], 16, 122);
+        text([self.current_selected_class[0] + 49], 30, 122);
         text([self.illager + 48], 16, 132);
 
         *DRAW_COLORS = 0b0100_0011_0010_0001;
