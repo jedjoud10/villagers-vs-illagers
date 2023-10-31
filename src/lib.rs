@@ -152,9 +152,10 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         text("V: ", 2, 122);
         text("I: ", 2, 132);
-        text([self.villager + 48], 16, 122);
-        text([self.current_selected_class[0] + 49], 30, 122);
-        text([self.illager + 48], 16, 132);
+        
+        let mut buffer = itoa::Buffer::new();
+        text(buffer.format(self.villager), 16, 122);
+        text(buffer.format(self.illager), 16, 132);
 
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 

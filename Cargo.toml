@@ -10,10 +10,13 @@ crate-type = ["cdylib"]
 [dependencies]
 buddy-alloc = { version = "0.4.1", optional = true }
 fastrand = "2.0.1"
+itoa = "1.0.9"
 
 [profile.release]
 opt-level = "z"
 lto = true
+debug-assertions = false
+strip = "debuginfo"
 
 [features]
 # use `--no-default-features` or comment out next line to disable allocator
