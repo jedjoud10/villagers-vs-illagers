@@ -7,15 +7,64 @@ use wasm4::*;
 
 static mut GAME: Option<Game> = None;
 
+// Price constants
+const VINDICATOR: u8 = 1;
+const VILLAGER: u8 = VINDICATOR;
+const PILLAGER: u8 = 1;
+const FARMER: u8 = PILLAGER;
+const EVOKER: u8 = 1;
+const SMITH: u8 = EVOKER;
+
+const PRICES: [u8; 6] = [
+    VINDICATOR, PILLAGER, EVOKER,
+    VILLAGER, FARMER, SMITH
+];
+
 // Potential state of each cell
 #[derive(Clone, Copy)]
 enum CellState {
     Empty,
-    // add villager states
-    // add illager states
-    // add house state   
+    Vindicator,
+    Pillager,
+    Evoker,
+    Vex,
+    Villager,
+    Farmer,
+    Smith,
+    Golem,
+    House1,
+    House2,
+    House3,
+    House4,
+    /* In case we want to have more map variety (given that things will be randomly generated)
+    Tree1,
+    Tree2,
+    Tree3,
+    Tree4,
+    Pen1,
+    Pen2,
+    Pen3,
+    Pen4,
+    Church1,
+    Church2,
+    Church3,
+    Church4
+    */
 }
 
+
+/*
+TODO:
+Sprites
+- Villager
+- Farmer
+- Smith
+- Iron golem
+- Vindicator
+- Pillager
+- Evoker
+- Vex
+*/
 
 // p1: villager
 // p2: illager
@@ -81,11 +130,18 @@ impl Game {
             }   
             .clamp(0, 191);
 
-            // Cycle current selected class
-            if new & BUTTON_2 != 0 {
+            
+            if new != 0 {
                 let selected = &mut self.current_selected_class[index];
-                *selected += 1;
-                *selected = *selected % 3;
+                // Cycle current selected class
+                if BUTTON_2 != 0 {
+                    *selected += 1;
+                    *selected = *selected % 3;
+                }
+                if BUTTON_1 != 0 {
+                    let points: &mut u8 = if index == 0 {&mut self.villager} else {&mut self.illager};
+                    *points -= PRICES[*selected as usize];
+                }
             }
         }
     }
