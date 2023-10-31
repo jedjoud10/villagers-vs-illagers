@@ -2,7 +2,7 @@
 mod alloc;
 mod wasm4;
 mod sprites;
-use std::u8;
+use std::{u8, cell::Cell};
 
 pub use sprites::*;
 use wasm4::*;
@@ -136,6 +136,7 @@ impl Game {
     }
 
     unsafe fn run(&mut self) {
+        self._update();
         self.fetch_input();
         self.draw_background();
         self.draw_sprites();
@@ -147,6 +148,26 @@ impl Game {
     // Fetch gamepad input. Also works in multiplayer. Only supports 2 players
     // Also moves the appropriate selectors if necessary
     unsafe fn fetch_input(&mut self) {
+        // Completely on the verge of breaking if bounds weren't hard coded lol
+        fn move_cursor(dir: Direction, cursor: &mut u8) {
+            let mut x = (*cursor % 16)  as i32;
+            let mut y = (*cursor / 16) as i32;
+            
+            match dir {
+                Direction::N => {y -= 1}
+                Direction::S => {y += 1}
+                Direction::W => {x -= 1}
+                Direction::E => {x += 1}
+
+                _ => {}
+            }
+
+            x = x.rem_euclid(16);
+            y = y.rem_euclid(12);
+
+            *cursor = (y * 16 + x) as u8;
+        }
+
         const GAMEPADS: [*const u8; 2] = [GAMEPAD1, GAMEPAD2];
         for index in 0..2 {
             let last = self.old_gamepad[index];
@@ -214,8 +235,48 @@ impl Game {
         }
     }
 
-    unsafe fn try_move(&mut self, pos: u8, pos2: u8) -> bool {
-        todo!();
+    // Iterate on all pieces
+    fn _update(&mut self) {
+        fn try_move(pos: usize, pos2: usize, grid: &mut [CellState]) -> bool {
+            let id = grid[pos];
+            let id_2 = grid[pos2];
+
+            
+        }
+
+        let mut suspicious_grid: [CellState; 192] = self.grid;
+        let grid_ref: &mut [CellState; 192] = &mut suspicious_grid;
+
+        for(_index, state) in self.grid.iter().enumerate() {
+            match state {
+                CellState::Empty | CellState::Tree(_) => {continue},
+
+                CellState::IllagerClan(id, _state) => {
+                    match id {
+                        IllagerClan::Vindicator => { try_move(_index, _index + 1, grid_ref); }
+                        IllagerClan::Pillager => { try_move(_index, _index - 1, grid_ref); }
+                        IllagerClan::Evoker => { try_move(_index, _index + 1, grid_ref); }
+                        IllagerClan::Vex => { try_move(_index, _index + 1, grid_ref); }
+                    }
+                }
+
+                CellState::VillagerClan(id) => {
+                    match id {
+                        VillagerClan::Villager => { try_move(_index, _index + 1, grid_ref); }
+                        VillagerClan::Farmer => { try_move(_index, _index + 1, grid_ref); }
+                        VillagerClan::Smith => { try_move(_index, _index + 1, grid_ref); }
+                        VillagerClan::Golem(_) => { try_move(_index, _index + 1, grid_ref); }
+                    }
+                }
+                CellState::House(_) => {continue},
+            }
+        }
+
+        self.grid = suspicious_grid;
+    }
+
+    fn sexual_intercourse(&self, jed: u128, logan: u16) -> u128 {
+        return jed + logan as u128;
     }
 
     // Draw a footer containing points, classes to summon, and current selected cell
@@ -248,23 +309,6 @@ impl Game {
             }
             */
         }
-    }
-
-    // Iterate on all pieces
-    unsafe fn _update(&self) {
-        for(_index, state) in self.grid.iter().enumerate() {
-            match state {
-                CellState::Empty => {continue},
-
-                CellState::IllagerClan(vtype, _state) => {
-
-                }
-                
-                _ => {},
-            }
-
-        }
-        todo!();
     }
 
     // Draw the background color
@@ -352,26 +396,6 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         rect(150, 150, 10, 10);
     }
-}
-
-// Completely on the verge of breaking if bounds weren't hard coded lol
-unsafe fn move_cursor(dir: Direction, cursor: &mut u8) {
-    let mut x = (*cursor % 16)  as i32;
-    let mut y = (*cursor / 16) as i32;
-    
-    match dir {
-        Direction::N => {y -= 1}
-        Direction::S => {y += 1}
-        Direction::W => {x -= 1}
-        Direction::E => {x += 1}
-
-        _ => {}
-    }
-
-    x = x.rem_euclid(16);
-    y = y.rem_euclid(12);
-
-    *cursor = (y * 16 + x) as u8;
 }
 
 #[no_mangle]
