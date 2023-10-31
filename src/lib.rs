@@ -56,6 +56,12 @@ enum VillagerClan {
     Golem(GolemState),
 }
 
+// Currents state for the house
+#[derive(Clone, Copy)]
+enum HouseState {
+    Solid, Burning, Destroyed
+}
+
 // Potential state of each cell
 #[derive(Clone, Copy)]
 enum CellState {
@@ -68,11 +74,9 @@ enum CellState {
     VillagerClan(VillagerClan),
 
     // Index repsenting a number from 0-4.
-    // 0: bottom left
-    // 1: bottom right
-    // 2: top left
-    // 3: top right
-    House(u8),
+    // 0, 1
+    // 2, 3
+    House(HouseState, u8),
     Tree(u8),
     /* In case we want to have more map variety (given that things will be randomly generated)
     Pen(u8),
@@ -112,6 +116,7 @@ Sprites
 struct Game {
     villager: u8,
     illager: u8,
+    tick: u8,
     cursors: [u8; 2],
     old_gamepad: [u8; 2],
     new_gamepad: [u8; 2],
@@ -126,6 +131,7 @@ impl Game {
 
         Self {
             villager: 9,
+            tick: 0,
             illager: 9,
             cursors: [176, 191],
             new_gamepad: [0; 2],
@@ -142,6 +148,9 @@ impl Game {
         self.draw_footer();
         self.draw_cursors();
         self.debug_palette();
+
+        self.tick += 1;
+        self.tick = self.tick % 60;
     }
 
     // Fetch gamepad input. Also works in multiplayer. Only supports 2 players
@@ -251,7 +260,7 @@ impl Game {
     }
 
     // Iterate on all pieces
-    unsafe fn _update(&self) {
+    unsafe fn update(&self) {
         for(_index, state) in self.grid.iter().enumerate() {
             match state {
                 CellState::Empty => {continue},
@@ -322,7 +331,25 @@ impl Game {
                     blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS);
                 },
                 
-                CellState::House(_) => todo!(),
+                // House rendering. Supports animating using the secondary sprite
+                CellState::House(state, index) => {
+                    let x_offset = (index % 2) as u32;
+                    let y_offset = (index / 2) as u32;
+                    
+                    let src_y = y_offset * 10 + 20;
+                    let src_x = match state {
+                        HouseState::Solid => x_offset * 10,
+                        HouseState::Burning => {
+                            // either 0 or 20, depicts the offset we should use for animating the house burning
+                            let frame_index_x_offset = (self.tick < 30) as u32 * 20;
+                            x_offset * 10 + 20 + frame_index_x_offset
+                        },
+                        HouseState::Destroyed => x_offset * 10 + 60,
+                    };
+
+                    blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS)
+
+                },
 
                 _ => {}
             };
