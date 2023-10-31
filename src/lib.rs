@@ -15,27 +15,63 @@ const FARMER: u8 = PILLAGER;
 const EVOKER: u8 = 3;
 const SMITH: u8 = EVOKER;
 
+// Village stuff goes first since P1 is controlling the villagers
 const PRICES: [u8; 6] = [
+    VILLAGER, FARMER, SMITH,
     VINDICATOR, PILLAGER, EVOKER,
-    VILLAGER, FARMER, SMITH
 ];
+
+// Entities associated with illagers (vex included)
+#[derive(Clone, Copy)]
+enum IllagerClan {
+    Vindicator,
+    Pillager,
+    Evoker,
+    Vex,
+}
+
+// Unique state for every type of illager
+#[derive(Clone, Copy)]
+enum IllagerState {
+    Idle,
+    Action,
+}
+
+// Unique state for golem
+#[derive(Clone, Copy)]
+enum GolemState {
+    Attack,
+    Broken,
+    Idle
+}
+
+// Entities associated with villagers (golems included)
+#[derive(Clone, Copy)]
+enum VillagerClan {
+    Villager,
+    Farmer,
+    Smith,
+    Golem(GolemState),
+}
 
 // Potential state of each cell
 #[derive(Clone, Copy)]
 enum CellState {
     Empty,
-    Vindicator,
-    Pillager,
-    Evoker,
-    Vex,
-    Villager,
-    Farmer,
-    Smith,
-    Golem,
-    House1,
-    House2,
-    House3,
-    House4,
+
+    // Illager type and corresponding state
+    IllagerClan(IllagerClan, IllagerState),
+
+    // Villagers have no different state types
+    VillagerClan(VillagerClan),
+
+    // Index repsenting a number from 0-4.
+    // 0: bottom left
+    // 1: bottom right
+    // 2: top left
+    // 3: top right
+    House(u8)
+
     /* In case we want to have more map variety (given that things will be randomly generated)
     Tree1,
     Tree2,
@@ -184,12 +220,36 @@ impl Game {
 
     // Draw the grid with the appropriate sprites
     unsafe fn draw_sprites(&self) {
+        *DRAW_COLORS = 0b0100_0011_0010_0001;
+
         for (index, state) in self.grid.iter().enumerate() {
-            // TODO: Draw appropriate sprite here
+            let dst_grid_x = index % 16;
+            let dst_grid_y = index / 16;
+            let dst_x = (dst_grid_x * 10) as i32;
+            let dst_y = (dst_grid_y * 10) as i32;
+
+            // blit_sub(&SPRITE, dst_x, dst_y, 10, 10, 0, 0, 80, SPRITE_FLAGS);
+
             match state {
                 CellState::Empty => {},
-                _ => {},
-            }
+                CellState::IllagerClan(_type, state) => {
+                    let src_x = match _type {
+                        IllagerClan::Vindicator => 0,
+                        IllagerClan::Pillager => 10,
+                        IllagerClan::Evoker => 20,
+                        IllagerClan::Vex => 30,
+                    };
+
+                    let src_y = match state {
+                        IllagerState::Idle => 0,
+                        IllagerState::Action => 10,
+                    };
+
+                    blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS);
+                },
+                CellState::VillagerClan(_) => todo!(),
+                CellState::House(_) => todo!(),
+            };
         }
     }
 
