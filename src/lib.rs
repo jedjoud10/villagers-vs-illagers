@@ -2,6 +2,8 @@
 mod alloc;
 mod wasm4;
 mod sprites;
+use std::u8;
+
 pub use sprites::*;
 use wasm4::*;
 
@@ -70,22 +72,25 @@ enum CellState {
     // 1: bottom right
     // 2: top left
     // 3: top right
-    House(u8)
-
+    House(u8),
+    Tree(u8),
     /* In case we want to have more map variety (given that things will be randomly generated)
-    Tree1,
-    Tree2,
-    Tree3,
-    Tree4,
-    Pen1,
-    Pen2,
-    Pen3,
-    Pen4,
-    Church1,
-    Church2,
-    Church3,
-    Church4
+    Pen(u8),
+    Church(u8),
+    Pond(u8),
     */
+}
+
+#[derive(Clone, Copy)]
+enum Direction {
+    N, // Up
+    E, // Right
+    S, // Down
+    W, // Left
+    NE, // Up-right
+    SE, // Down-right
+    NW, // Up-left
+    SW, // Down-left
 }
 
 
@@ -122,7 +127,7 @@ impl Game {
         Self {
             villager: 9,
             illager: 9,
-            cursors: [0; 2],
+            cursors: [176, 191],
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             current_selected_class: [0, 0],
@@ -152,19 +157,16 @@ impl Game {
 
             // Move cursor on grid
             let x = self.new_gamepad[index];
-            let grid_pos = self.cursors[index];
-            self.cursors[index] = if x & BUTTON_UP != 0 {
-                grid_pos.saturating_sub(16)
+            let grid_pos: &mut u8 = &mut self.cursors[index];
+            if x & BUTTON_UP != 0 {
+                move_cursor(Direction::N, grid_pos);
             } else if x & BUTTON_DOWN != 0 {
-                grid_pos.saturating_add(16)
+                move_cursor(Direction::S, grid_pos);
             } else if x & BUTTON_LEFT != 0 {
-                grid_pos.saturating_sub(1)
+                move_cursor(Direction::W, grid_pos);
             } else if x & BUTTON_RIGHT != 0 {
-                grid_pos.saturating_add(1)
-            } else {
-                grid_pos
-            }   
-            .clamp(0, 191);
+                move_cursor(Direction::E, grid_pos);
+            }
 
     
             let selected = &mut self.current_selected_class[index];
@@ -174,13 +176,13 @@ impl Game {
                 *selected += 1;
                 *selected = *selected % 3;
             }
-
+            
             // Place currently selected class
             if new & BUTTON_1 != 0 {
                 let points: &mut u8 = if index == 0 { &mut self.villager } else { &mut self.illager };
 
                 // make sure the cell is empty so we can place our shit there
-                if matches!(self.grid[grid_pos as usize], CellState::Empty) {
+                if matches!(self.grid[*grid_pos as usize], CellState::Empty) {
                     // checked sub to make sure we don't cause a crash (also saves us from
                     // manually comparing to check if we have enough points to spend) 
                     if let Some(new_points) = points.checked_sub(PRICES[*selected as usize + 3 * index]) {
@@ -189,7 +191,7 @@ impl Game {
                         // logic that handles setting new classes
                         // basically overwrite the cell state, so we should have a check (even before subtracting the points) to make
                         // sure that the position is valid
-                        let cell = &mut self.grid[grid_pos as usize];
+                        let cell = &mut self.grid[*grid_pos as usize];
 
                         // "index" is play index (where 0 is villager and 1 is illager)
                         // "selected" is the selected class index (0..3)
@@ -200,8 +202,8 @@ impl Game {
                             (0, 2) => CellState::VillagerClan(VillagerClan::Smith),
     
                             // illager clan classes
-                            (1, 0) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
-                            (1, 1) => CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
+                            (1, 0) => CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
+                            (1, 1) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
                             (1, 2) => CellState::IllagerClan(IllagerClan::Evoker, IllagerState::Idle),
     
                             _ => unreachable!()
@@ -210,6 +212,10 @@ impl Game {
                 }
             }
         }
+    }
+
+    unsafe fn try_move(&mut self, pos: u8, pos2: u8) -> bool {
+        todo!();
     }
 
     // Draw a footer containing points, classes to summon, and current selected cell
@@ -242,6 +248,23 @@ impl Game {
             }
             */
         }
+    }
+
+    // Iterate on all pieces
+    unsafe fn _update(&self) {
+        for(_index, state) in self.grid.iter().enumerate() {
+            match state {
+                CellState::Empty => {continue},
+
+                CellState::IllagerClan(vtype, _state) => {
+
+                }
+                
+                _ => {},
+            }
+
+        }
+        todo!();
     }
 
     // Draw the background color
@@ -300,6 +323,8 @@ impl Game {
                 },
                 
                 CellState::House(_) => todo!(),
+
+                _ => {}
             };
         }
     }
@@ -327,6 +352,26 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         rect(150, 150, 10, 10);
     }
+}
+
+// Completely on the verge of breaking if bounds weren't hard coded lol
+unsafe fn move_cursor(dir: Direction, cursor: &mut u8) {
+    let mut x = (*cursor % 16)  as i32;
+    let mut y = (*cursor / 16) as i32;
+    
+    match dir {
+        Direction::N => {y -= 1}
+        Direction::S => {y += 1}
+        Direction::W => {x -= 1}
+        Direction::E => {x += 1}
+
+        _ => {}
+    }
+
+    x = x.rem_euclid(16);
+    y = y.rem_euclid(12);
+
+    *cursor = (y * 16 + x) as u8;
 }
 
 #[no_mangle]
