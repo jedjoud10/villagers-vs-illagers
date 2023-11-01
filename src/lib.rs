@@ -3,7 +3,7 @@ mod alloc;
 mod wasm4;
 mod terrain;
 mod sprites;
-use std::{u8, cell::Cell};
+use std::{u8, cell::Cell, collections::HashMap, rc::Rc, num::{NonZeroU32, NonZeroU8}};
 
 pub use sprites::*;
 
@@ -30,8 +30,10 @@ const PRICES: [u8; 6] = [
 pub enum IllagerClan {
     Vindicator,
     Pillager,
-    Evoker,
-    Vex,
+    Evoker {
+        vex_ids: [Option<NonZeroU8>; 2]
+    },
+    Vex { id: u8 },
 }
 
 // Unique state for every type of illager
@@ -49,13 +51,28 @@ pub enum GolemState {
     Idle
 }
 
+// Stored in the game world. Describes a link between a minion (vec / golem) and a parent (evoker / smith)
+// Keeps track of the minion position, and spawner position
+// It is the responsability of the spawner to update its pos values whenever it moves
+// It is the responsibility of the minion to update its pos values whenever it moves
+struct MinionLink {
+    minion_id: u8,
+    minion_position_index: u8,
+    parent_position_index: u8,
+}
+
 // Entities associated with villagers (golems included)
 #[derive(Clone, Copy)]
 pub enum VillagerClan {
     Villager,
     Farmer,
-    Smith,
-    Golem(GolemState),
+    Smith {
+        golem_id: Option<NonZeroU8>,
+    },
+    Golem {
+        id: u8,
+        state: GolemState,
+    },
 }
 
 // Currents state for the house
@@ -123,6 +140,9 @@ struct Game {
     cursors: [u8; 2],
     old_gamepad: [u8; 2],
     new_gamepad: [u8; 2],
+    
+    minions: HashMap<u8, MinionLink>,
+    
     current_selected_class: [u8; 2],
     grid: [CellState; 192],
 }
@@ -146,6 +166,7 @@ impl Game {
             cursors: [176, 191],
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
+            minions: HashMap::new(),
             current_selected_class: [0, 0],
             grid: terrain::generate(),
         }
@@ -230,8 +251,6 @@ impl Game {
                         *points = new_points;
     
                         // logic that handles setting new classes
-                        // basically overwrite the cell state, so we should have a check (even before subtracting the points) to make
-                        // sure that the position is valid
                         let cell = &mut self.grid[*grid_pos as usize];
 
                         // "index" is play index (where 0 is villager and 1 is illager)
@@ -240,12 +259,12 @@ impl Game {
                             // villager clan classes
                             (0, 0) => CellState::VillagerClan(VillagerClan::Villager),
                             (0, 1) => CellState::VillagerClan(VillagerClan::Farmer),
-                            (0, 2) => CellState::VillagerClan(VillagerClan::Smith),
+                            (0, 2) => CellState::VillagerClan(VillagerClan::Smith { golem_id: None }),
     
                             // illager clan classes
                             (1, 0) => CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
                             (1, 1) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
-                            (1, 2) => CellState::IllagerClan(IllagerClan::Evoker, IllagerState::Idle),
+                            (1, 2) => CellState::IllagerClan(IllagerClan::Evoker { vex_ids: [None, None] }, IllagerState::Idle),
     
                             _ => unreachable!()
                         };
@@ -273,8 +292,8 @@ impl Game {
                     match id {
                         IllagerClan::Vindicator => { }
                         IllagerClan::Pillager => { }
-                        IllagerClan::Evoker => { }
-                        IllagerClan::Vex => { }
+                        IllagerClan::Evoker { .. } => { }
+                        IllagerClan::Vex { .. } => { }
                     }
                 }
 
@@ -282,11 +301,40 @@ impl Game {
                     match id {
                         VillagerClan::Villager => { }
                         VillagerClan::Farmer => { }
-                        VillagerClan::Smith => { }
-                        VillagerClan::Golem(_) => { }
+                        VillagerClan::Smith { .. } => { }
+                        VillagerClan::Golem { .. } => { }
                     }
                 }
                 CellState::House(_, _) => {continue},
+            }
+        }
+
+        // Update the minion values for parent/minion position 
+        for(index, state) in self.grid.iter().enumerate() {
+            match state {
+                // Illager update link's minion pos
+                CellState::IllagerClan(IllagerClan::Evoker { vex_ids }, _) => {        
+                    for id in vex_ids.iter().filter_map(|x| x.as_ref()) {
+                        self.minions.get_mut(&id.get()).unwrap().parent_position_index = index as u8;
+                    }            
+                }
+                
+                // Vex update link's minion pos 
+                CellState::IllagerClan(IllagerClan::Vex { id }, _) => {   
+                    self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
+                }
+
+                // Smith update link's parent pos
+                CellState::VillagerClan(VillagerClan::Smith { golem_id: Some(id) } ) => {
+                    self.minions.get_mut(&id.get()).unwrap().parent_position_index = index as u8;
+                }
+
+                // Golem update link's minion pos
+                CellState::VillagerClan(VillagerClan::Golem { id, ..}) => {
+                    self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
+                }
+
+                _ => {}
             }
         }
 
@@ -336,12 +384,10 @@ impl Game {
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 
         for (index, state) in self.grid.iter().enumerate() {
-            let dst_grid_x = index % 16;
-            let dst_grid_y = index / 16;
+            let (dst_grid_x, dst_grid_y) = grid_from_vec(index as u8);
+            let (dst_grid_x, dst_grid_y) = (dst_grid_x as usize, dst_grid_y as usize);
             let dst_x = (dst_grid_x * 10) as i32;
             let dst_y = (dst_grid_y * 10) as i32;
-
-            // blit_sub(&SPRITE, dst_x, dst_y, 10, 10, 0, 0, 80, SPRITE_FLAGS);
 
             match state {
                 CellState::Empty => {},
@@ -351,8 +397,8 @@ impl Game {
                     let src_x = match _type {
                         IllagerClan::Vindicator => 0,
                         IllagerClan::Pillager => 10,
-                        IllagerClan::Evoker => 20,
-                        IllagerClan::Vex => 30,
+                        IllagerClan::Evoker { .. } => 20,
+                        IllagerClan::Vex { .. } => 30,
                     };
 
                     // src y pos from the sprite sheet
@@ -369,8 +415,8 @@ impl Game {
                     let (src_x, src_y) = match _type {
                         VillagerClan::Villager => (40, 0),
                         VillagerClan::Farmer => (50, 0),
-                        VillagerClan::Smith => (60, 0),
-                        VillagerClan::Golem(golem) => match golem {
+                        VillagerClan::Smith { .. } => (60, 0),
+                        VillagerClan::Golem { state, .. } => match state {
                             GolemState::Attack => (60, 10),
                             GolemState::Broken => (70, 10),
                             GolemState::Idle => (70, 0),
@@ -408,8 +454,7 @@ impl Game {
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
         for (index, selector_position) in self.cursors.iter().enumerate() {
-            let posy = selector_position / 16;
-            let posx = selector_position % 16;
+            let (posx, posy) = grid_from_vec(*selector_position);
 
             const COLORS: [u8; 2] = [0b1000000, 0b0010000];
             *DRAW_COLORS = COLORS[index] as u16;
@@ -420,6 +465,7 @@ impl Game {
                 0
             };
             
+            // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
             blit_sub(&CURSOR, (posx * 10) as i32 - 3, (posy * 10) as i32 - 3, 16, 16, 0, 0, 16, flags);
         }
     }
@@ -437,12 +483,38 @@ impl Game {
     }
 }
 
-fn vec_from_grid() {
-
+// Convert local coords to index
+fn vec_from_grid(x: u8, y: u8) -> u8 {
+    x + y * 16
 }
 
-fn grid_from_grid() {
+// Convert index to local coords
+fn grid_from_vec(index: u8) -> (u8, u8) {
+    let x = index % 16;
+    let y = index / 16;
+    (x, y)
+}
 
+// Apply a direction in index based space
+fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
+    let index = index as i32;
+    
+    let unclamped = match dir {
+        Direction::N => index - 16,
+        Direction::E => index + 1,
+        Direction::S => index + 16,
+        Direction::W => index - 1,
+        Direction::NE => index - 15,
+        Direction::SE => index + 17,
+        Direction::NW => index - 17,
+        Direction::SW => index + 15,
+    };
+
+    if unclamped < 0 || unclamped >= 192 {
+        return None
+    } else {
+        return Some(unclamped as u8)
+    }
 }
 
 #[no_mangle]
