@@ -2,6 +2,7 @@
 name = "cart"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -11,6 +12,11 @@ crate-type = ["cdylib"]
 buddy-alloc = { version = "0.4.1", optional = true }
 fastrand = "2.0.1"
 itoa = "1.0.9"
+
+[build-dependencies]
+bitvec = "1.0.1"
+eyre = "0.6.8"
+png = "0.17.5"
 
 [profile.release]
 opt-level = "z"

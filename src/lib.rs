@@ -134,6 +134,8 @@ struct Game {
 
     minions: HashMap<u8, MinionLink>,
 
+    sheet: Sprite,
+
     current_selected_class: [u8; 2],
     grid: [CellState; 192],
 }
@@ -165,6 +167,7 @@ impl Game {
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             minions: HashMap::new(),
             current_selected_class: [0, 0],
+            sheet: sprite!("../packed/sprite.pak"),
             grid: terrain::generate(),
         }
     }
@@ -409,6 +412,9 @@ impl Game {
     // Draw the grid with the appropriate sprites
     unsafe fn draw_sprites(&self) {
         *DRAW_COLORS = 0b0100_0011_0010_0001;
+        
+        let sprite = self.sheet.bytes;
+        let flags = self.sheet.flags;
 
         for (index, state) in self.grid.iter().enumerate() {
             let (dst_grid_x, dst_grid_y) = vec_from_grid(index as u8);
@@ -435,15 +441,15 @@ impl Game {
                     };
 
                     blit_sub(
-                        &SPRITE,
+                        self.sheet.bytes,
                         dst_x,
                         dst_y,
                         10,
                         10,
                         src_x,
                         src_y,
-                        80,
-                        SPRITE_FLAGS,
+                        self.sheet.width,
+                        self.sheet.flags,
                     );
                 }
 
@@ -461,15 +467,15 @@ impl Game {
                     };
 
                     blit_sub(
-                        &SPRITE,
+                        sprite,
                         dst_x,
                         dst_y,
                         10,
                         10,
                         src_x,
                         src_y,
-                        80,
-                        SPRITE_FLAGS,
+                        self.sheet.width,
+                        flags,
                     );
                 }
 
@@ -490,15 +496,15 @@ impl Game {
                     };
 
                     blit_sub(
-                        &SPRITE,
+                        sprite,
                         dst_x,
                         dst_y,
                         10,
                         10,
                         src_x,
                         src_y,
-                        80,
-                        SPRITE_FLAGS,
+                        self.sheet.width,
+                        1,
                     )
                 }
 
@@ -509,25 +515,22 @@ impl Game {
 
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
+        *DRAW_COLORS = 0b0100_0000_0010_0001;
         for (index, selector_position) in self.cursors.iter().enumerate() {
             let (posx, posy) = vec_from_grid(*selector_position);
 
-            const COLORS: [u8; 2] = [0b1000000, 0b0010000];
-            *DRAW_COLORS = COLORS[index] as u16;
-
-            let flags = if index == 0 { BLIT_FLIP_X } else { 0 };
 
             // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
             blit_sub(
-                &CURSOR,
-                (posx * 10) as i32 - 3,
-                (posy * 10) as i32 - 3,
-                16,
-                16,
-                0,
-                0,
-                16,
-                flags,
+                self.sheet.bytes,
+                (posx * 10) as i32,
+                (posy * 10) as i32,
+                10,
+                10,
+                30,
+                40 + index as u32 * 10,
+                self.sheet.width,
+                self.sheet.flags,
             );
         }
     }
