@@ -305,21 +305,21 @@ impl Game {
         }
 
         let mut suspicious_grid: [CellState; 192] = self.grid;
-        let _grid_ref: &mut [CellState; 192] = &mut suspicious_grid;
+        let grid_ref: &mut [CellState; 192] = &mut suspicious_grid;
 
         for (_index, state) in self.grid.iter().enumerate() {
             match state {
                 CellState::Empty | CellState::Tree(_) => continue,
 
                 CellState::IllagerClan(id, _state) => match id {
-                    IllagerClan::Vindicator => {}
+                    IllagerClan::Vindicator => { try_move(_index as u8, Direction::N, grid_ref); }
                     IllagerClan::Pillager => {}
                     IllagerClan::Evoker { .. } => {}
                     IllagerClan::Vex { .. } => {}
                 },
 
                 CellState::VillagerClan(id) => match id {
-                    VillagerClan::Villager => {}
+                    VillagerClan::Villager => { try_move(_index as u8, Direction::W, grid_ref); }
                     VillagerClan::Farmer => {}
                     VillagerClan::Smith { .. } => {}
                     VillagerClan::Golem { .. } => {}
@@ -409,7 +409,7 @@ impl Game {
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 
         for (index, state) in self.grid.iter().enumerate() {
-            let (dst_grid_x, dst_grid_y) = grid_from_vec(index as u8);
+            let (dst_grid_x, dst_grid_y) = vec_from_grid(index as u8);
             let (dst_grid_x, dst_grid_y) = (dst_grid_x as usize, dst_grid_y as usize);
             let dst_x = (dst_grid_x * 10) as i32;
             let dst_y = (dst_grid_y * 10) as i32;
@@ -508,7 +508,7 @@ impl Game {
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
         for (index, selector_position) in self.cursors.iter().enumerate() {
-            let (posx, posy) = grid_from_vec(*selector_position);
+            let (posx, posy) = vec_from_grid(*selector_position);
 
             const COLORS: [u8; 2] = [0b1000000, 0b0010000];
             *DRAW_COLORS = COLORS[index] as u16;
@@ -544,12 +544,12 @@ impl Game {
 }
 
 // Convert local coords to index
-fn vec_from_grid(x: u8, y: u8) -> u8 {
+fn grid_from_vec(x: u8, y: u8) -> u8 {
     x + y * 16
 }
 
 // Convert index to local coords
-fn grid_from_vec(index: u8) -> (u8, u8) {
+fn vec_from_grid(index: u8) -> (u8, u8) {
     let x = index % 16;
     let y = index / 16;
     (x, y)
@@ -557,20 +557,20 @@ fn grid_from_vec(index: u8) -> (u8, u8) {
 
 // Apply a direction in index based space
 fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
-    let index = index as i32;
+    let (mut x, mut y) = vec_from_grid(index);
 
-    let unclamped = match dir {
-        Direction::N => index - 16,
-        Direction::E => index + 1,
-        Direction::S => index + 16,
-        Direction::W => index - 1,
-        Direction::NE => index - 15,
-        Direction::SE => index + 17,
-        Direction::NW => index - 17,
-        Direction::SW => index + 15,
+    match dir {
+        Direction::N => y -= 1,
+        Direction::E => x += 1,
+        Direction::S => y += 1,
+        Direction::W => x -= 1,
+        Direction::NE => {y -= 1; x += 1},
+        Direction::SE => {y += 1; x += 1},
+        Direction::NW => {y -= 1; x -= 1},
+        Direction::SW => {y += 1; x -= 1},
     };
 
-    (0..192).contains(&unclamped).then_some(unclamped as u8)
+    ((0..12).contains(&y) & (0..16).contains(&x)).then_some(grid_from_vec(x, y))
 }
 
 #[no_mangle]
