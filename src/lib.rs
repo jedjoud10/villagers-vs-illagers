@@ -3,13 +3,7 @@ mod alloc;
 mod sprites;
 mod terrain;
 mod wasm4;
-use std::{
-    cell::Cell,
-    collections::HashMap,
-    num::{NonZeroU32, NonZeroU8},
-    rc::Rc,
-    u8,
-};
+use std::{collections::HashMap, num::NonZeroU8, u8};
 
 pub use sprites::*;
 
@@ -188,7 +182,7 @@ impl Game {
         self.debug_palette();
 
         self.tick += 1;
-        self.tick = self.tick % 60;
+        self.tick %= 60;
     }
 
     // Fetch gamepad input. Also works in multiplayer. Only supports 2 players
@@ -240,7 +234,7 @@ impl Game {
             // Cycle current selected class
             if new & BUTTON_2 != 0 {
                 *selected += 1;
-                *selected = *selected % 3;
+                *selected %= 3;
             }
 
             // Place currently selected class
@@ -302,7 +296,7 @@ impl Game {
         }
 
         let mut suspicious_grid: [CellState; 192] = self.grid;
-        let grid_ref: &mut [CellState; 192] = &mut suspicious_grid;
+        let _grid_ref: &mut [CellState; 192] = &mut suspicious_grid;
 
         for (_index, state) in self.grid.iter().enumerate() {
             match state {
@@ -567,11 +561,7 @@ fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
         Direction::SW => index + 15,
     };
 
-    if unclamped < 0 || unclamped >= 192 {
-        return None;
-    } else {
-        return Some(unclamped as u8);
-    }
+    (0..192).contains(&unclamped).then_some(unclamped as u8)
 }
 
 #[no_mangle]
