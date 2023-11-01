@@ -291,8 +291,17 @@ impl Game {
 
     // Iterate on all pieces
     fn _update(&mut self) {
-        fn try_move(pos: usize, pos2: Direction, grid: &mut [CellState]) {
-            let id = grid[pos];
+        fn try_move(index: u8, dir: Direction, grid: &mut [CellState]) -> bool {
+            let Some(index_2) = apply_direction(index, dir).map(|i| i as usize) else {
+                return false;
+            };
+            if matches!(grid[index_2], CellState::Empty) {
+                grid[index_2] = grid[index as usize];
+                grid[index as usize] = CellState::Empty;
+                return true;
+            } else {
+                return false;
+            }
         }
 
         let mut suspicious_grid: [CellState; 192] = self.grid;
