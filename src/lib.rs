@@ -273,7 +273,7 @@ impl Game {
 
                             // illager clan classes
                             (1, 0) => {
-                                CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle)
+                                CellState::IllagerClan(IllagerClan::Vex { id: 0 }, IllagerState::Idle)
                             }
                             (1, 1) => {
                                 CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
@@ -348,7 +348,7 @@ impl Game {
 
                 // Vex update link's minion pos
                 CellState::IllagerClan(IllagerClan::Vex { id }, _) => {
-                    self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
+                    //self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
                 }
 
                 // Smith update link's parent pos
