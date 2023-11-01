@@ -24,8 +24,8 @@ fn spawn_house(index: usize, grid: &mut [CellState; 192]) {
         return;
     }
 
-    grid[index] = CellState::House(HouseState::Solid, 0);
-    grid[index + 1] = CellState::House(HouseState::Solid, 1);
-    grid[index + 16] = CellState::House(HouseState::Solid, 2);
-    grid[index + 17] = CellState::House(HouseState::Solid, 3);
+    grid[index] = CellState::House(HouseState::Burning, 0);
+    grid[index + 1] = CellState::House(HouseState::Burning, 1);
+    grid[index + 16] = CellState::House(HouseState::Burning, 2);
+    grid[index + 17] = CellState::House(HouseState::Burning, 3);
 }

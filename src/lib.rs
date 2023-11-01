@@ -3,7 +3,7 @@ mod alloc;
 mod sprites;
 mod terrain;
 mod wasm4;
-use std::{collections::HashMap, num::NonZeroU8, u8};
+use std::{collections::HashMap, num::NonZeroU8, u8, mem::transmute};
 
 pub use sprites::*;
 
@@ -180,6 +180,7 @@ impl Game {
         self.draw_footer();
         self.draw_cursors();
         self.debug_palette();
+        
 
         self.tick += 1;
         self.tick %= 60;
@@ -290,9 +291,10 @@ impl Game {
     }
 
     // Iterate on all pieces
-    fn _update(&mut self) {
+    unsafe fn _update(&mut self) {
         fn try_move(index: u8, dir: Direction, grid: &mut [CellState]) -> bool {
             let Some(index_2) = apply_direction(index, dir).map(|i| i as usize) else {
+                println!("FUCK!");
                 return false;
             };
             if matches!(grid[index_2], CellState::Empty) {
@@ -312,17 +314,17 @@ impl Game {
                 CellState::Empty | CellState::Tree(_) => continue,
 
                 CellState::IllagerClan(id, _state) => match id {
-                    IllagerClan::Vindicator => { try_move(_index as u8, Direction::N, grid_ref); }
-                    IllagerClan::Pillager => {}
-                    IllagerClan::Evoker { .. } => {}
-                    IllagerClan::Vex { .. } => {}
+                    IllagerClan::Vindicator => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
+                    IllagerClan::Pillager => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
+                    IllagerClan::Evoker { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
+                    IllagerClan::Vex { .. } => { try_move(_index as u8, random_direction(self.tick, 0..8), grid_ref); }
                 },
 
                 CellState::VillagerClan(id) => match id {
-                    VillagerClan::Villager => { try_move(_index as u8, Direction::W, grid_ref); }
-                    VillagerClan::Farmer => {}
-                    VillagerClan::Smith { .. } => {}
-                    VillagerClan::Golem { .. } => {}
+                    VillagerClan::Villager => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
+                    VillagerClan::Farmer => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
+                    VillagerClan::Smith { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
+                    VillagerClan::Golem { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
                 },
                 CellState::House(_, _) => continue,
             }
@@ -557,7 +559,8 @@ fn vec_from_grid(index: u8) -> (u8, u8) {
 
 // Apply a direction in index based space
 fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
-    let (mut x, mut y) = vec_from_grid(index);
+    let (x, y) = vec_from_grid(index);
+    let (mut x, mut y) = (x as i8, y as i8);
 
     match dir {
         Direction::N => y -= 1,
@@ -570,7 +573,11 @@ fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
         Direction::SW => {y += 1; x -= 1},
     };
 
-    ((0..12).contains(&y) & (0..16).contains(&x)).then_some(grid_from_vec(x, y))
+    ((0..12).contains(&y) && (0..16).contains(&x)).then(|| grid_from_vec(x as u8, y as u8))
+}
+
+unsafe fn random_direction(seed: u8, range: std::ops::Range<u8>) -> Direction {
+    transmute::<u8, Direction>(fastrand::u8(range))
 }
 
 #[no_mangle]
