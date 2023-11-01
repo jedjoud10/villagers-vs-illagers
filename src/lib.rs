@@ -86,6 +86,7 @@ enum CellState {
 }
 
 #[derive(Clone, Copy)]
+#[repr(u8)]
 enum Direction {
     N, // Up
     E, // Right
@@ -127,7 +128,7 @@ struct Game {
 impl Game {
     unsafe fn new() -> Self {
         // grey, beige, green, brown
-        *PALETTE = [0xd7bbad, 0xbf8a6e, 0x57795b, 0x26180e];
+        *PALETTE = [0xeacfb2, 0xc69478, 0x8a5543, 0x441d1f];
 
         Self {
             villager: 9,
@@ -142,7 +143,8 @@ impl Game {
     }
 
     unsafe fn run(&mut self) {
-        self._update();
+        if self.tick == 0 {self._update();}
+        
         self.fetch_input();
         self.draw_background();
         self.draw_sprites();
@@ -246,11 +248,9 @@ impl Game {
 
     // Iterate on all pieces
     fn _update(&mut self) {
-        fn try_move(pos: usize, pos2: usize, grid: &mut [CellState]) -> bool {
+        fn try_move(pos: usize, pos2: Direction, grid: &mut [CellState]) {
             let id = grid[pos];
-            let id_2 = grid[pos2];
-
-            todo!()
+            
         }
 
         let mut suspicious_grid: [CellState; 192] = self.grid;
@@ -262,19 +262,19 @@ impl Game {
 
                 CellState::IllagerClan(id, _state) => {
                     match id {
-                        IllagerClan::Vindicator => { try_move(_index, _index + 1, grid_ref); }
-                        IllagerClan::Pillager => { try_move(_index, _index - 1, grid_ref); }
-                        IllagerClan::Evoker => { try_move(_index, _index + 1, grid_ref); }
-                        IllagerClan::Vex => { try_move(_index, _index + 1, grid_ref); }
+                        IllagerClan::Vindicator => { }
+                        IllagerClan::Pillager => { }
+                        IllagerClan::Evoker => { }
+                        IllagerClan::Vex => { }
                     }
                 }
 
                 CellState::VillagerClan(id) => {
                     match id {
-                        VillagerClan::Villager => { try_move(_index, _index + 1, grid_ref); }
-                        VillagerClan::Farmer => { try_move(_index, _index + 1, grid_ref); }
-                        VillagerClan::Smith => { try_move(_index, _index + 1, grid_ref); }
-                        VillagerClan::Golem(_) => { try_move(_index, _index + 1, grid_ref); }
+                        VillagerClan::Villager => { }
+                        VillagerClan::Farmer => { }
+                        VillagerClan::Smith => { }
+                        VillagerClan::Golem(_) => { }
                     }
                 }
                 CellState::House(_, _) => {continue},
@@ -419,6 +419,14 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         rect(150, 150, 10, 10);
     }
+}
+
+fn vec_from_grid() {
+
+}
+
+fn grid_from_grid() {
+
 }
 
 #[no_mangle]
