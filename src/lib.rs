@@ -1,10 +1,12 @@
 #[cfg(feature = "buddy-alloc")]
 mod alloc;
 mod wasm4;
+mod terrain;
 mod sprites;
 use std::{u8, cell::Cell};
 
 pub use sprites::*;
+
 use wasm4::*;
 
 static mut GAME: Option<Game> = None;
@@ -25,7 +27,7 @@ const PRICES: [u8; 6] = [
 
 // Entities associated with illagers (vex included)
 #[derive(Clone, Copy)]
-enum IllagerClan {
+pub enum IllagerClan {
     Vindicator,
     Pillager,
     Evoker,
@@ -34,14 +36,14 @@ enum IllagerClan {
 
 // Unique state for every type of illager
 #[derive(Clone, Copy)]
-enum IllagerState {
+pub enum IllagerState {
     Idle,
     Action,
 }
 
 // Unique state for golem
 #[derive(Clone, Copy)]
-enum GolemState {
+pub enum GolemState {
     Attack,
     Broken,
     Idle
@@ -49,7 +51,7 @@ enum GolemState {
 
 // Entities associated with villagers (golems included)
 #[derive(Clone, Copy)]
-enum VillagerClan {
+pub enum VillagerClan {
     Villager,
     Farmer,
     Smith,
@@ -58,13 +60,13 @@ enum VillagerClan {
 
 // Currents state for the house
 #[derive(Clone, Copy)]
-enum HouseState {
+pub enum HouseState {
     Solid, Burning, Destroyed
 }
 
 // Potential state of each cell
 #[derive(Clone, Copy)]
-enum CellState {
+pub enum CellState {
     Empty,
 
     // Illager type and corresponding state
@@ -130,6 +132,13 @@ impl Game {
         // grey, beige, green, brown
         *PALETTE = [0xeacfb2, 0xc69478, 0x8a5543, 0x441d1f];
 
+        // Read seed from disk and increment it, saving it again
+        let mut seed = 0u64;
+        diskr((&mut seed as *mut u64).cast::<u8>(), std::mem::size_of::<u64>() as u32);
+        seed += 1;
+        diskw((&mut seed as *mut u64).cast::<u8>(), std::mem::size_of::<u64>() as u32);
+        fastrand::seed(seed);
+
         Self {
             villager: 9,
             tick: 0,
@@ -138,7 +147,7 @@ impl Game {
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             current_selected_class: [0, 0],
-            grid: [CellState::Empty; 192],
+            grid: terrain::generate(),
         }
     }
 
@@ -404,7 +413,14 @@ impl Game {
 
             const COLORS: [u8; 2] = [0b1000000, 0b0010000];
             *DRAW_COLORS = COLORS[index] as u16;
-            rect((posx * 10) as i32, (posy * 10) as i32, 10, 10);
+
+            let flags = if index == 0 {
+              BLIT_FLIP_X  
+            } else {
+                0
+            };
+            
+            blit_sub(&CURSOR, (posx * 10) as i32 - 3, (posy * 10) as i32 - 3, 16, 16, 0, 0, 16, flags);
         }
     }
 
