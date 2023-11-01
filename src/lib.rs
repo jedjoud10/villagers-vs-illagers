@@ -1,9 +1,15 @@
 #[cfg(feature = "buddy-alloc")]
 mod alloc;
-mod wasm4;
-mod terrain;
 mod sprites;
-use std::{u8, cell::Cell, collections::HashMap, rc::Rc, num::{NonZeroU32, NonZeroU8}};
+mod terrain;
+mod wasm4;
+use std::{
+    cell::Cell,
+    collections::HashMap,
+    num::{NonZeroU32, NonZeroU8},
+    rc::Rc,
+    u8,
+};
 
 pub use sprites::*;
 
@@ -20,19 +26,14 @@ const EVOKER: u8 = 3;
 const SMITH: u8 = EVOKER;
 
 // Village stuff goes first since P1 is controlling the villagers
-const PRICES: [u8; 6] = [
-    VILLAGER, FARMER, SMITH,
-    VINDICATOR, PILLAGER, EVOKER,
-];
+const PRICES: [u8; 6] = [VILLAGER, FARMER, SMITH, VINDICATOR, PILLAGER, EVOKER];
 
 // Entities associated with illagers (vex included)
 #[derive(Clone, Copy)]
 pub enum IllagerClan {
     Vindicator,
     Pillager,
-    Evoker {
-        vex_ids: [Option<NonZeroU8>; 2]
-    },
+    Evoker { vex_ids: [Option<NonZeroU8>; 2] },
     Vex { id: u8 },
 }
 
@@ -48,7 +49,7 @@ pub enum IllagerState {
 pub enum GolemState {
     Attack,
     Broken,
-    Idle
+    Idle,
 }
 
 // Stored in the game world. Describes a link between a minion (vec / golem) and a parent (evoker / smith)
@@ -66,19 +67,16 @@ struct MinionLink {
 pub enum VillagerClan {
     Villager,
     Farmer,
-    Smith {
-        golem_id: Option<NonZeroU8>,
-    },
-    Golem {
-        id: u8,
-        state: GolemState,
-    },
+    Smith { golem_id: Option<NonZeroU8> },
+    Golem { id: u8, state: GolemState },
 }
 
 // Currents state for the house
 #[derive(Clone, Copy)]
 pub enum HouseState {
-    Solid, Burning, Destroyed
+    Solid,
+    Burning,
+    Destroyed,
 }
 
 // Potential state of each cell
@@ -107,16 +105,15 @@ pub enum CellState {
 #[derive(Clone, Copy)]
 #[repr(u8)]
 enum Direction {
-    N, // Up
-    E, // Right
-    S, // Down
-    W, // Left
+    N,  // Up
+    E,  // Right
+    S,  // Down
+    W,  // Left
     NE, // Up-right
     SE, // Down-right
     NW, // Up-left
     SW, // Down-left
 }
-
 
 /*
 TODO:
@@ -140,9 +137,9 @@ struct Game {
     cursors: [u8; 2],
     old_gamepad: [u8; 2],
     new_gamepad: [u8; 2],
-    
+
     minions: HashMap<u8, MinionLink>,
-    
+
     current_selected_class: [u8; 2],
     grid: [CellState; 192],
 }
@@ -154,9 +151,15 @@ impl Game {
 
         // Read seed from disk and increment it, saving it again
         let mut seed = 0u64;
-        diskr((&mut seed as *mut u64).cast::<u8>(), std::mem::size_of::<u64>() as u32);
+        diskr(
+            (&mut seed as *mut u64).cast::<u8>(),
+            std::mem::size_of::<u64>() as u32,
+        );
         seed += 1;
-        diskw((&mut seed as *mut u64).cast::<u8>(), std::mem::size_of::<u64>() as u32);
+        diskw(
+            (&mut seed as *mut u64).cast::<u8>(),
+            std::mem::size_of::<u64>() as u32,
+        );
         fastrand::seed(seed);
 
         Self {
@@ -173,8 +176,10 @@ impl Game {
     }
 
     unsafe fn run(&mut self) {
-        if self.tick == 0 {self._update();}
-        
+        if self.tick == 0 {
+            self._update();
+        }
+
         self.fetch_input();
         self.draw_background();
         self.draw_sprites();
@@ -191,14 +196,14 @@ impl Game {
     unsafe fn fetch_input(&mut self) {
         // Completely on the verge of breaking if bounds weren't hard coded lol
         fn move_cursor(dir: Direction, cursor: &mut u8) {
-            let mut x = (*cursor % 16)  as i32;
+            let mut x = (*cursor % 16) as i32;
             let mut y = (*cursor / 16) as i32;
-            
+
             match dir {
-                Direction::N => {y -= 1}
-                Direction::S => {y += 1}
-                Direction::W => {x -= 1}
-                Direction::E => {x += 1}
+                Direction::N => y -= 1,
+                Direction::S => y += 1,
+                Direction::W => x -= 1,
+                Direction::E => x += 1,
 
                 _ => {}
             }
@@ -230,7 +235,6 @@ impl Game {
                 move_cursor(Direction::E, grid_pos);
             }
 
-    
             let selected = &mut self.current_selected_class[index];
 
             // Cycle current selected class
@@ -238,18 +242,24 @@ impl Game {
                 *selected += 1;
                 *selected = *selected % 3;
             }
-            
+
             // Place currently selected class
             if new & BUTTON_1 != 0 {
-                let points: &mut u8 = if index == 0 { &mut self.villager } else { &mut self.illager };
+                let points: &mut u8 = if index == 0 {
+                    &mut self.villager
+                } else {
+                    &mut self.illager
+                };
 
                 // make sure the cell is empty so we can place our shit there
                 if matches!(self.grid[*grid_pos as usize], CellState::Empty) {
                     // checked sub to make sure we don't cause a crash (also saves us from
-                    // manually comparing to check if we have enough points to spend) 
-                    if let Some(new_points) = points.checked_sub(PRICES[*selected as usize + 3 * index]) {
+                    // manually comparing to check if we have enough points to spend)
+                    if let Some(new_points) =
+                        points.checked_sub(PRICES[*selected as usize + 3 * index])
+                    {
                         *points = new_points;
-    
+
                         // logic that handles setting new classes
                         let cell = &mut self.grid[*grid_pos as usize];
 
@@ -259,14 +269,25 @@ impl Game {
                             // villager clan classes
                             (0, 0) => CellState::VillagerClan(VillagerClan::Villager),
                             (0, 1) => CellState::VillagerClan(VillagerClan::Farmer),
-                            (0, 2) => CellState::VillagerClan(VillagerClan::Smith { golem_id: None }),
-    
+                            (0, 2) => {
+                                CellState::VillagerClan(VillagerClan::Smith { golem_id: None })
+                            }
+
                             // illager clan classes
-                            (1, 0) => CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
-                            (1, 1) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
-                            (1, 2) => CellState::IllagerClan(IllagerClan::Evoker { vex_ids: [None, None] }, IllagerState::Idle),
-    
-                            _ => unreachable!()
+                            (1, 0) => {
+                                CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle)
+                            }
+                            (1, 1) => {
+                                CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
+                            }
+                            (1, 2) => CellState::IllagerClan(
+                                IllagerClan::Evoker {
+                                    vex_ids: [None, None],
+                                },
+                                IllagerState::Idle,
+                            ),
+
+                            _ => unreachable!(),
                         };
                     }
                 }
@@ -278,59 +299,60 @@ impl Game {
     fn _update(&mut self) {
         fn try_move(pos: usize, pos2: Direction, grid: &mut [CellState]) {
             let id = grid[pos];
-            
         }
 
         let mut suspicious_grid: [CellState; 192] = self.grid;
         let grid_ref: &mut [CellState; 192] = &mut suspicious_grid;
 
-        for(_index, state) in self.grid.iter().enumerate() {
+        for (_index, state) in self.grid.iter().enumerate() {
             match state {
-                CellState::Empty | CellState::Tree(_) => {continue},
+                CellState::Empty | CellState::Tree(_) => continue,
 
-                CellState::IllagerClan(id, _state) => {
-                    match id {
-                        IllagerClan::Vindicator => { }
-                        IllagerClan::Pillager => { }
-                        IllagerClan::Evoker { .. } => { }
-                        IllagerClan::Vex { .. } => { }
-                    }
-                }
+                CellState::IllagerClan(id, _state) => match id {
+                    IllagerClan::Vindicator => {}
+                    IllagerClan::Pillager => {}
+                    IllagerClan::Evoker { .. } => {}
+                    IllagerClan::Vex { .. } => {}
+                },
 
-                CellState::VillagerClan(id) => {
-                    match id {
-                        VillagerClan::Villager => { }
-                        VillagerClan::Farmer => { }
-                        VillagerClan::Smith { .. } => { }
-                        VillagerClan::Golem { .. } => { }
-                    }
-                }
-                CellState::House(_, _) => {continue},
+                CellState::VillagerClan(id) => match id {
+                    VillagerClan::Villager => {}
+                    VillagerClan::Farmer => {}
+                    VillagerClan::Smith { .. } => {}
+                    VillagerClan::Golem { .. } => {}
+                },
+                CellState::House(_, _) => continue,
             }
         }
 
-        // Update the minion values for parent/minion position 
-        for(index, state) in self.grid.iter().enumerate() {
+        // Update the minion values for parent/minion position
+        for (index, state) in self.grid.iter().enumerate() {
             match state {
                 // Illager update link's minion pos
-                CellState::IllagerClan(IllagerClan::Evoker { vex_ids }, _) => {        
+                CellState::IllagerClan(IllagerClan::Evoker { vex_ids }, _) => {
                     for id in vex_ids.iter().filter_map(|x| x.as_ref()) {
-                        self.minions.get_mut(&id.get()).unwrap().parent_position_index = index as u8;
-                    }            
+                        self.minions
+                            .get_mut(&id.get())
+                            .unwrap()
+                            .parent_position_index = index as u8;
+                    }
                 }
-                
-                // Vex update link's minion pos 
-                CellState::IllagerClan(IllagerClan::Vex { id }, _) => {   
+
+                // Vex update link's minion pos
+                CellState::IllagerClan(IllagerClan::Vex { id }, _) => {
                     self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
                 }
 
                 // Smith update link's parent pos
-                CellState::VillagerClan(VillagerClan::Smith { golem_id: Some(id) } ) => {
-                    self.minions.get_mut(&id.get()).unwrap().parent_position_index = index as u8;
+                CellState::VillagerClan(VillagerClan::Smith { golem_id: Some(id) }) => {
+                    self.minions
+                        .get_mut(&id.get())
+                        .unwrap()
+                        .parent_position_index = index as u8;
                 }
 
                 // Golem update link's minion pos
-                CellState::VillagerClan(VillagerClan::Golem { id, ..}) => {
+                CellState::VillagerClan(VillagerClan::Golem { id, .. }) => {
                     self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
                 }
 
@@ -349,7 +371,7 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         text("V: ", 2, 122);
         text("I: ", 2, 132);
-        
+
         let mut buffer = itoa::Buffer::new();
         text(buffer.format(self.villager), 16, 122);
         text(buffer.format(self.illager), 16, 132);
@@ -390,7 +412,7 @@ impl Game {
             let dst_y = (dst_grid_y * 10) as i32;
 
             match state {
-                CellState::Empty => {},
+                CellState::Empty => {}
 
                 CellState::IllagerClan(_type, state) => {
                     // src x pos inside the sprite sheet that we will blit from
@@ -407,8 +429,18 @@ impl Game {
                         IllagerState::Action => 10,
                     };
 
-                    blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS);
-                },
+                    blit_sub(
+                        &SPRITE,
+                        dst_x,
+                        dst_y,
+                        10,
+                        10,
+                        src_x,
+                        src_y,
+                        80,
+                        SPRITE_FLAGS,
+                    );
+                }
 
                 CellState::VillagerClan(_type) => {
                     // src x and src y positions inside the sprite sheet
@@ -423,14 +455,24 @@ impl Game {
                         },
                     };
 
-                    blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS);
-                },
-                
+                    blit_sub(
+                        &SPRITE,
+                        dst_x,
+                        dst_y,
+                        10,
+                        10,
+                        src_x,
+                        src_y,
+                        80,
+                        SPRITE_FLAGS,
+                    );
+                }
+
                 // House rendering. Supports animating using the secondary sprite
                 CellState::House(state, index) => {
                     let x_offset = (index % 2) as u32;
                     let y_offset = (index / 2) as u32;
-                    
+
                     let src_y = y_offset * 10 + 20;
                     let src_x = match state {
                         HouseState::Solid => x_offset * 10,
@@ -438,13 +480,22 @@ impl Game {
                             // either 0 or 20, depicts the offset we should use for animating the house burning
                             let frame_index_x_offset = (self.tick < 30) as u32 * 20;
                             x_offset * 10 + 20 + frame_index_x_offset
-                        },
+                        }
                         HouseState::Destroyed => x_offset * 10 + 60,
                     };
 
-                    blit_sub(&SPRITE, dst_x, dst_y, 10, 10, src_x, src_y, 80, SPRITE_FLAGS)
-
-                },
+                    blit_sub(
+                        &SPRITE,
+                        dst_x,
+                        dst_y,
+                        10,
+                        10,
+                        src_x,
+                        src_y,
+                        80,
+                        SPRITE_FLAGS,
+                    )
+                }
 
                 _ => {}
             };
@@ -459,14 +510,20 @@ impl Game {
             const COLORS: [u8; 2] = [0b1000000, 0b0010000];
             *DRAW_COLORS = COLORS[index] as u16;
 
-            let flags = if index == 0 {
-              BLIT_FLIP_X  
-            } else {
-                0
-            };
-            
+            let flags = if index == 0 { BLIT_FLIP_X } else { 0 };
+
             // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
-            blit_sub(&CURSOR, (posx * 10) as i32 - 3, (posy * 10) as i32 - 3, 16, 16, 0, 0, 16, flags);
+            blit_sub(
+                &CURSOR,
+                (posx * 10) as i32 - 3,
+                (posy * 10) as i32 - 3,
+                16,
+                16,
+                0,
+                0,
+                16,
+                flags,
+            );
         }
     }
 
@@ -498,7 +555,7 @@ fn grid_from_vec(index: u8) -> (u8, u8) {
 // Apply a direction in index based space
 fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
     let index = index as i32;
-    
+
     let unclamped = match dir {
         Direction::N => index - 16,
         Direction::E => index + 1,
@@ -511,9 +568,9 @@ fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
     };
 
     if unclamped < 0 || unclamped >= 192 {
-        return None
+        return None;
     } else {
-        return Some(unclamped as u8)
+        return Some(unclamped as u8);
     }
 }
 
