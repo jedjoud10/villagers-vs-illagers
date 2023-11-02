@@ -3,8 +3,11 @@ mod alloc;
 mod sprites;
 mod terrain;
 mod wasm4;
+mod slotmap;
 use std::{collections::HashMap, num::NonZeroU8, u8, mem::transmute};
 
+use nonmax::NonMaxU8;
+use slotmap::VeryDumbSlotMap;
 pub use sprites::*;
 
 use wasm4::*;
@@ -27,8 +30,8 @@ const PRICES: [u8; 6] = [VILLAGER, FARMER, SMITH, VINDICATOR, PILLAGER, EVOKER];
 pub enum IllagerClan {
     Vindicator,
     Pillager,
-    Evoker { vex_ids: [Option<NonZeroU8>; 2] },
-    Vex { id: u8 },
+    Evoker { vex_ids: [Option<NonMaxU8>; 2] },
+    Vex { id: NonMaxU8 },
 }
 
 // Unique state for every type of illager
@@ -51,7 +54,7 @@ pub enum GolemState {
 // It is the responsability of the spawner to update its pos values whenever it moves
 // It is the responsibility of the minion to update its pos values whenever it moves
 struct MinionLink {
-    minion_id: u8,
+    minion_id: NonMaxU8,
     minion_position_index: u8,
     parent_position_index: u8,
 }
@@ -61,8 +64,8 @@ struct MinionLink {
 pub enum VillagerClan {
     Villager,
     Farmer,
-    Smith { golem_id: Option<NonZeroU8> },
-    Golem { id: u8, state: GolemState },
+    Smith { golem_id: Option<NonMaxU8> },
+    Golem { id: NonMaxU8, state: GolemState },
 }
 
 // Currents state for the house
@@ -134,6 +137,8 @@ struct Game {
 
     sheet: Sprite,
 
+    minions: VeryDumbSlotMap<MinionLink>,    
+
     current_selected_class: [u8; 2],
     grid: [CellState; 192],
 }
@@ -162,6 +167,7 @@ impl Game {
             tick: 0,
             illager: 9,
             cursors: [176, 191],
+            minions: VeryDumbSlotMap::default(),
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             current_selected_class: [0, 0],
@@ -271,7 +277,7 @@ impl Game {
 
                             // illager clan classes
                             (1, 0) => {
-                                CellState::IllagerClan(IllagerClan::Vex { id: 0 }, IllagerState::Idle)
+                                CellState::IllagerClan(IllagerClan::Vex { id: NonMaxU8::new(0).unwrap() }, IllagerState::Idle)
                             }
                             (1, 1) => {
                                 CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
@@ -337,33 +343,29 @@ impl Game {
                 // Illager update link's minion pos
                 CellState::IllagerClan(IllagerClan::Evoker { vex_ids }, _) => {
                     for id in vex_ids.iter().filter_map(|x| x.as_ref()) {
-                        /*
                         self.minions
-                            .get_mut(&id.get())
+                            .get_mut(id.get())
                             .unwrap()
                             .parent_position_index = index as u8;
-                        */
                     }
                 }
 
                 // Vex update link's minion pos
                 CellState::IllagerClan(IllagerClan::Vex { id }, _) => {
-                    //self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
+                    self.minions.get_mut(id.get()).unwrap().minion_position_index = index as u8;
                 }
 
                 // Smith update link's parent pos
                 CellState::VillagerClan(VillagerClan::Smith { golem_id: Some(id) }) => {
-                    /*
                     self.minions
-                        .get_mut(&id.get())
+                        .get_mut(id.get())
                         .unwrap()
                         .parent_position_index = index as u8;
-                    */
                 }
 
                 // Golem update link's minion pos
                 CellState::VillagerClan(VillagerClan::Golem { id, .. }) => {
-                    //self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
+                    self.minions.get_mut(id.get()).unwrap().minion_position_index = index as u8;
                 }
 
                 _ => {}
