@@ -1,5 +1,7 @@
 use std::{cell::UnsafeCell, mem::MaybeUninit};
 
+// Don't touch pls am coding dis tmrw
+/*
 // Very lightweight slotmap implementation for minions
 // Only supports u8 indices (only up to 64 tho), with no generational number (ids are not to be reused)
 pub struct VeryDumbSlotMap<T> {
@@ -63,3 +65,4 @@ impl<T> VeryDumbSlotMap<T> {
         }
     }
 }
+*/

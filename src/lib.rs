@@ -7,7 +7,6 @@ mod slotmap;
 use std::{collections::HashMap, num::NonZeroU8, u8, mem::transmute};
 
 use nonmax::NonMaxU8;
-use slotmap::VeryDumbSlotMap;
 pub use sprites::*;
 
 use wasm4::*;
@@ -68,9 +67,9 @@ pub enum VillagerClan {
     Golem { id: NonMaxU8, state: GolemState },
 }
 
-// Currents state for the house
+// Currents state for the buildings
 #[derive(Clone, Copy)]
-pub enum HouseState {
+pub enum BuildingState {
     Solid,
     Burning,
     Destroyed,
@@ -87,16 +86,41 @@ pub enum CellState {
     // Villagers have no different state types
     VillagerClan(VillagerClan),
 
-    // Index repsenting a number from 0-4.
     // 0, 1
     // 2, 3
-    House(HouseState, u8),
+    House(BuildingState, u8),
+
+    // 0, 1
+    // 2, 3
+    BigRock(u8),
+    Rock,
+
+    // 0
+    // 1
+    Lampost(u8),
+
+    Bell,
+
+    // 0, 1
+    // 2, 3
     Tree(u8),
-    /* In case we want to have more map variety (given that things will be randomly generated)
-    Pen(u8),
-    Church(u8),
-    Pond(u8),
-    */
+
+    // 0, 1
+    // 2, 3
+    Stand(u8),
+
+    // todo: add other house (pen)
+
+    // 0, 1
+    // 2, 3
+    // 4, 5
+    Church(BuildingState, u8),
+
+    // 0, 1
+    Flowers(u8),
+    
+    // 0, 1
+    Hay(u8),
 }
 
 #[derive(Clone, Copy)]
@@ -137,7 +161,7 @@ struct Game {
 
     sheet: Sprite,
 
-    minions: VeryDumbSlotMap<MinionLink>,    
+    //minions: VeryDumbSlotMap<MinionLink>,    
 
     current_selected_class: [u8; 2],
     grid: [CellState; 192],
@@ -167,7 +191,7 @@ impl Game {
             tick: 0,
             illager: 9,
             cursors: [176, 191],
-            minions: VeryDumbSlotMap::default(),
+            //minions: VeryDumbSlotMap::default(),
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             current_selected_class: [0, 0],
@@ -318,8 +342,6 @@ impl Game {
 
         for (_index, state) in self.grid.iter().enumerate() {
             match state {
-                CellState::Empty | CellState::Tree(_) => continue,
-
                 CellState::IllagerClan(id, _state) => match id {
                     IllagerClan::Vindicator => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
                     IllagerClan::Pillager => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
@@ -333,11 +355,13 @@ impl Game {
                     VillagerClan::Smith { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
                     VillagerClan::Golem { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
                 },
-                CellState::House(_, _) => continue,
+
+                _ => continue,
             }
         }
 
         // Update the minion values for parent/minion position
+        /*
         for (index, state) in self.grid.iter().enumerate() {
             match state {
                 // Illager update link's minion pos
@@ -371,6 +395,7 @@ impl Game {
                 _ => {}
             }
         }
+        */
 
         self.grid = suspicious_grid;
     }
@@ -412,6 +437,44 @@ impl Game {
         *DRAW_COLORS = 0b0011_0011_0011_0011;
         rect(0, 0, 160, 120);
     }
+        
+    // Common functionality for rendering multi-sprite buildings (houses, church, bell, torch pole)
+    // width and height are in sprite size (so for house this would be 2, 2)
+    unsafe fn draw_multi_sprite(&self, index: u8, mega_width: u8, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
+        let x_offset = (index % mega_width) as u32;
+        let y_offset = (index / mega_width) as u32;
+
+        let act_src_y = y_offset * 10 + src_y;
+        let act_src_x = x_offset * 10 + src_x;
+
+        blit_sub(
+            &self.sheet.bytes,
+            dst_x,
+            dst_y,
+            10,
+            10,
+            act_src_x,
+            act_src_y,
+            self.sheet.width,
+            self.sheet.flags,
+        )
+    }
+
+    // Draw a single sprite
+    unsafe fn draw_sprite(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
+        blit_sub(
+            &self.sheet.bytes,
+            dst_x,
+            dst_y,
+            10,
+            10,
+            src_x,
+            src_y,
+            self.sheet.width,
+            self.sheet.flags,
+        )
+    }
+
 
     // Draw the grid with the appropriate sprites
     unsafe fn draw_sprites(&self) {
@@ -420,6 +483,9 @@ impl Game {
         let sprite = self.sheet.bytes;
         let flags = self.sheet.flags;
 
+        // Used for burning buildings
+        let burning_x_offset = (self.tick < 30) as u32 * 20;
+
         for (index, state) in self.grid.iter().enumerate() {
             let (dst_grid_x, dst_grid_y) = vec_from_grid(index as u8);
             let (dst_grid_x, dst_grid_y) = (dst_grid_x as usize, dst_grid_y as usize);
@@ -427,8 +493,6 @@ impl Game {
             let dst_y = (dst_grid_y * 10) as i32;
 
             match state {
-                CellState::Empty => {}
-
                 CellState::IllagerClan(_type, state) => {
                     // src x pos inside the sprite sheet that we will blit from
                     let src_x = match _type {
@@ -483,36 +547,34 @@ impl Game {
                     );
                 }
 
-                // House rendering. Supports animating using the secondary sprite
-                CellState::House(state, index) => {
-                    let x_offset = (index % 2) as u32;
-                    let y_offset = (index / 2) as u32;
-
-                    let src_y = y_offset * 10 + 20;
+                CellState::House(state, i) => {
                     let src_x = match state {
-                        HouseState::Solid => x_offset * 10,
-                        HouseState::Burning => {
-                            // either 0 or 20, depicts the offset we should use for animating the house burning
-                            let frame_index_x_offset = (self.tick < 30) as u32 * 20;
-                            x_offset * 10 + 20 + frame_index_x_offset
-                        }
-                        HouseState::Destroyed => x_offset * 10 + 60,
+                        BuildingState::Solid => 0,
+                        BuildingState::Burning => 20 + burning_x_offset,
+                        BuildingState::Destroyed => 60,
                     };
 
-                    blit_sub(
-                        sprite,
-                        dst_x,
-                        dst_y,
-                        10,
-                        10,
-                        src_x,
-                        src_y,
-                        self.sheet.width,
-                        1,
-                    )
-                }
+                    self.draw_multi_sprite(*i, 2, src_x, 20, dst_x, dst_y);
+                },
 
-                _ => {}
+                CellState::BigRock(i) => self.draw_multi_sprite(*i, 2, 0, 40, dst_x, dst_y),
+                CellState::Rock => self.draw_sprite(30, 40, dst_x, dst_y),
+                CellState::Lampost(i) => self.draw_multi_sprite(*i, 1, 20, 40, dst_x, dst_y),
+                CellState::Bell => self.draw_sprite(30, 50, dst_x, dst_y),
+                CellState::Tree(i) => self.draw_multi_sprite(*i, 2, 40, 40, dst_x, dst_y),
+                CellState::Stand(i) => self.draw_multi_sprite(*i, 2, 60, 40, dst_x, dst_y),
+                CellState::Church(state, i) => {
+                    let src_x = match state {
+                        BuildingState::Solid => 0,
+                        BuildingState::Burning => 20 + burning_x_offset,
+                        BuildingState::Destroyed => 60,
+                    };
+
+                    self.draw_multi_sprite(*i, 2, src_x, 80, dst_x, dst_y);
+                },
+                CellState::Flowers(i) => self.draw_multi_sprite(*i, 2, 10, 110, dst_x, dst_y),
+                CellState::Hay(i) => self.draw_multi_sprite(*i, 2, 30, 110, dst_x, dst_y),
+                _ => continue,
             };
         }
     }
