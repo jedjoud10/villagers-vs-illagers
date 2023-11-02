@@ -132,8 +132,6 @@ struct Game {
     old_gamepad: [u8; 2],
     new_gamepad: [u8; 2],
 
-    minions: HashMap<u8, MinionLink>,
-
     sheet: Sprite,
 
     current_selected_class: [u8; 2],
@@ -152,6 +150,7 @@ impl Game {
             std::mem::size_of::<u64>() as u32,
         );
         seed += 1;
+
         diskw(
             (&mut seed as *mut u64).cast::<u8>(),
             std::mem::size_of::<u64>() as u32,
@@ -165,7 +164,6 @@ impl Game {
             cursors: [176, 191],
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
-            minions: HashMap::new(),
             current_selected_class: [0, 0],
             sheet: sprite!("../packed/sprite.pak"),
             grid: terrain::generate(),
@@ -174,7 +172,7 @@ impl Game {
 
     unsafe fn run(&mut self) {
         if self.tick == 0 {
-            self._update();
+            self.update();
         }
 
         self.fetch_input();
@@ -294,10 +292,10 @@ impl Game {
     }
 
     // Iterate on all pieces
-    unsafe fn _update(&mut self) {
+    unsafe fn update(&mut self) {
         fn try_move(index: u8, dir: Direction, grid: &mut [CellState]) -> bool {
             let Some(index_2) = apply_direction(index, dir).map(|i| i as usize) else {
-                println!("FUCK!");
+                //println!("FUCK!");
                 return false;
             };
             if matches!(grid[index_2], CellState::Empty) {
@@ -339,10 +337,12 @@ impl Game {
                 // Illager update link's minion pos
                 CellState::IllagerClan(IllagerClan::Evoker { vex_ids }, _) => {
                     for id in vex_ids.iter().filter_map(|x| x.as_ref()) {
+                        /*
                         self.minions
                             .get_mut(&id.get())
                             .unwrap()
                             .parent_position_index = index as u8;
+                        */
                     }
                 }
 
@@ -353,15 +353,17 @@ impl Game {
 
                 // Smith update link's parent pos
                 CellState::VillagerClan(VillagerClan::Smith { golem_id: Some(id) }) => {
+                    /*
                     self.minions
                         .get_mut(&id.get())
                         .unwrap()
                         .parent_position_index = index as u8;
+                    */
                 }
 
                 // Golem update link's minion pos
                 CellState::VillagerClan(VillagerClan::Golem { id, .. }) => {
-                    self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
+                    //self.minions.get_mut(id).unwrap().minion_position_index = index as u8;
                 }
 
                 _ => {}
@@ -515,11 +517,12 @@ impl Game {
 
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
-        *DRAW_COLORS = 0b0100_0000_0010_0001;
+        *DRAW_COLORS = 0b0100_0000_0000_0001;
         for (index, selector_position) in self.cursors.iter().enumerate() {
             let (posx, posy) = vec_from_grid(*selector_position);
 
-
+            /*
+            // TODO: Should we add the new cursors or keep it like the old ones (where you flip in code)
             // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
             blit_sub(
                 self.sheet.bytes,
@@ -532,6 +535,20 @@ impl Game {
                 self.sheet.width,
                 self.sheet.flags,
             );
+            */
+
+            const COLORS: [u8; 2] = [0b1000000, 0b0010000];
+            //*DRAW_COLORS = COLORS[index] as u16;
+
+            let flags = if index == 0 {
+              BLIT_FLIP_X 
+            } else {
+                0
+            } | self.sheet.flags;
+            
+            // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
+            blit_sub(&self.sheet.bytes, posx as i32 * 10, posy as i32 * 10, 10, 10, 70, 110, self.sheet.width, flags);
+        
         }
     }
 
