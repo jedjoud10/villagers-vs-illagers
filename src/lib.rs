@@ -97,7 +97,7 @@ pub enum CellState {
 
     // 0
     // 1
-    Lampost(u8),
+    Lamppost(u8),
 
     Bell,
 
@@ -343,17 +343,17 @@ impl Game {
         for (_index, state) in self.grid.iter().enumerate() {
             match state {
                 CellState::IllagerClan(id, _state) => match id {
-                    IllagerClan::Vindicator => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
-                    IllagerClan::Pillager => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
-                    IllagerClan::Evoker { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
-                    IllagerClan::Vex { .. } => { try_move(_index as u8, random_direction(self.tick, 0..8), grid_ref); }
+                    IllagerClan::Vindicator => { try_move(_index as u8, random_direction(0..4), grid_ref); }
+                    IllagerClan::Pillager => { try_move(_index as u8, random_direction(0..4), grid_ref); }
+                    IllagerClan::Evoker { .. } => { try_move(_index as u8, random_direction(0..4), grid_ref); }
+                    IllagerClan::Vex { .. } => { try_move(_index as u8, random_direction(0..8), grid_ref); }
                 },
 
                 CellState::VillagerClan(id) => match id {
-                    VillagerClan::Villager => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
-                    VillagerClan::Farmer => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
-                    VillagerClan::Smith { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
-                    VillagerClan::Golem { .. } => { try_move(_index as u8, random_direction(self.tick, 0..4), grid_ref); }
+                    VillagerClan::Villager => { try_move(_index as u8, random_direction(0..4), grid_ref); }
+                    VillagerClan::Farmer => { try_move(_index as u8, random_direction(0..4), grid_ref); }
+                    VillagerClan::Smith { .. } => { try_move(_index as u8, random_direction(0..4), grid_ref); }
+                    VillagerClan::Golem { .. } => { try_move(_index as u8, random_direction(0..4), grid_ref); }
                 },
 
                 _ => continue,
@@ -559,7 +559,8 @@ impl Game {
 
                 CellState::BigRock(i) => self.draw_multi_sprite(*i, 2, 0, 40, dst_x, dst_y),
                 CellState::Rock => self.draw_sprite(30, 40, dst_x, dst_y),
-                CellState::Lampost(i) => self.draw_multi_sprite(*i, 1, 20, 40, dst_x, dst_y),
+                CellState::Lamppost
+        (i) => self.draw_multi_sprite(*i, 1, 20, 40, dst_x, dst_y),
                 CellState::Bell => self.draw_sprite(30, 50, dst_x, dst_y),
                 CellState::Tree(i) => self.draw_multi_sprite(*i, 2, 40, 40, dst_x, dst_y),
                 CellState::Stand(i) => self.draw_multi_sprite(*i, 2, 60, 40, dst_x, dst_y),
@@ -660,7 +661,7 @@ fn apply_direction(index: u8, dir: Direction) -> Option<u8> {
     ((0..12).contains(&y) && (0..16).contains(&x)).then(|| grid_from_vec(x as u8, y as u8))
 }
 
-unsafe fn random_direction(seed: u8, range: std::ops::Range<u8>) -> Direction {
+unsafe fn random_direction(range: std::ops::Range<u8>) -> Direction {
     transmute::<u8, Direction>(fastrand::u8(range))
 }
 

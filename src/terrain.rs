@@ -61,7 +61,7 @@ pub fn generate() -> [CellState; 192] {
         },
 
         Feature {
-            closure: |i| CellState::Lampost(i),
+            closure: |i| CellState::Lamppost(i),
             dimensions: (1, 2),
             max_attempts_to_spawn: 3,
         }
