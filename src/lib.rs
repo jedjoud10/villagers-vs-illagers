@@ -301,7 +301,7 @@ impl Game {
 
                             // illager clan classes
                             (1, 0) => {
-                                CellState::IllagerClan(IllagerClan::Vex { id: NonMaxU8::new(0).unwrap() }, IllagerState::Idle)
+                                CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle)
                             }
                             (1, 1) => {
                                 CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
@@ -325,7 +325,6 @@ impl Game {
     unsafe fn update(&mut self) {
         fn try_move(index: u8, dir: Direction, grid: &mut [CellState]) -> bool {
             let Some(index_2) = apply_direction(index, dir).map(|i| i as usize) else {
-                //println!("FUCK!");
                 return false;
             };
             if matches!(grid[index_2], CellState::Empty) {
