@@ -10,8 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 buddy-alloc = { version = "0.4.1", optional = true }
-fastrand = "2.0.1"
-nonmax = "0.5.3"
 itoa = "1.0.9"
 
 [build-dependencies]

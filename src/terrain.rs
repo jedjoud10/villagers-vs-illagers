@@ -1,4 +1,4 @@
-use crate::{CellState, BuildingState};
+use crate::{CellState, BuildingState, AREA, GRID_SIZE_X, GRID_SIZE_Y, rng::Rng};
 
 // Terrain feature that we could generate
 struct Feature {
@@ -8,8 +8,9 @@ struct Feature {
 }
 
 // Generate a grid with some interesting terrain
-pub fn generate() -> [CellState; 192] {
-    let mut grid = [CellState::Empty; 192];
+pub fn generate(rng: &mut Rng) -> Box<[CellState; AREA]> {
+    let temp = vec![CellState::Empty; AREA].into_boxed_slice();
+    let mut grid: Box<[CellState; AREA]> = unsafe { Box::from_raw(Box::into_raw(temp) as *mut [CellState; AREA]) };
 
     let features = [
         Feature {
@@ -69,19 +70,23 @@ pub fn generate() -> [CellState; 192] {
 
     for Feature { closure, dimensions, max_attempts_to_spawn } in features {
         for _ in 0..max_attempts_to_spawn {
-            let x = fastrand::usize(0..192);
-            spawn_building(x, &mut grid, dimensions.0, dimensions.1, closure);
+            let x = rng.u16(0..(AREA as u16));
+            spawn_building(x, grid.as_mut_slice(), dimensions.0, dimensions.1, closure);
         }
     }
 
     grid
 }
 
+// Maximum number of cells for one building
+const MAX_BUILDING_COUNT_CACHE: usize = 2*3;
+
 // Spawn any arbitrary building using a lambda closure
-fn spawn_building(index: usize, grid: &mut [CellState; 192], width: u8, height: u8, function: impl Fn(u8) -> CellState) {
+fn spawn_building(index: u16, grid: &mut [CellState], width: u8, height: u8, function: impl Fn(u8) -> CellState) {
     // Makes sure we won't have a building that "extends" into the map border
-    let (x, y) = crate::vec_from_grid(index as u8);
-    if x >= (16u8 - width) || y >= (12u8 - height) {
+    let (x, y) = crate::vec_from_grid(index);
+
+    if x >= (GRID_SIZE_X - width) || y >= (GRID_SIZE_Y - height) {
         return
     }
 
@@ -97,11 +102,11 @@ fn spawn_building(index: usize, grid: &mut [CellState; 192], width: u8, height: 
 
         // Convert it back to grid space (on the map scale though)
         let a = crate::grid_from_vec(ax, ay);
-        index as u8 + a
+        index as u16 + a
     });
 
     // Can't use Vec. Womp womp
-    let mut cache = [0u8; 2*3];
+    let mut cache = [0u16; MAX_BUILDING_COUNT_CACHE];
     let mut count = 0;
     for (src, dst) in indices.zip(cache.iter_mut()) {
         *dst = src;
