@@ -153,6 +153,7 @@ struct Game {
     cursors: [u16; 2],
     old_gamepad: [u8; 2],
     new_gamepad: [u8; 2],
+    cursor_timer: [u8; 2],
     view_local_cameras: [(u8, u8); 2],
     current_player: u8,
     
@@ -172,7 +173,7 @@ impl Game {
             (&mut seed as *mut u64).cast::<u8>(),
             std::mem::size_of::<u64>() as u32,
         );
-        //seed += 1;
+        seed += 1;
 
         diskw(
             (&mut seed as *mut u64).cast::<u8>(),
@@ -191,6 +192,7 @@ impl Game {
             current_player: 0, 
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
+            cursor_timer: [0, 0],
             current_selected_class: [0, 0],
             sheet: sprite!("../packed/sprite.pak"),
             grid,
@@ -263,17 +265,21 @@ impl Game {
             self.new_gamepad[index] = new;
 
             // Move cursor on grid
-            let x = self.new_gamepad[index];
             let grid_pos: &mut u16 = &mut self.cursors[index];
             let camera = &mut self.view_local_cameras[index];
-            if x & BUTTON_UP != 0 {
-                move_cursor(Direction::N, grid_pos, camera);
-            } else if x & BUTTON_DOWN != 0 {
-                move_cursor(Direction::S, grid_pos, camera);
-            } else if x & BUTTON_LEFT != 0 {
-                move_cursor(Direction::W, grid_pos, camera);
-            } else if x & BUTTON_RIGHT != 0 {
-                move_cursor(Direction::E, grid_pos, camera);
+            let tick: &mut u8 = &mut self.cursor_timer[index];
+            let tick_check: bool = *tick % 5 == 0;
+            *tick = tick.wrapping_add(1);
+            if current & BUTTON_UP != 0 {
+                if tick_check { move_cursor(Direction::N, grid_pos, camera)};
+            } else if current & BUTTON_DOWN != 0 {
+                if tick_check { move_cursor(Direction::S, grid_pos, camera)};
+            } else if current & BUTTON_LEFT != 0 {
+                if tick_check { move_cursor(Direction::W, grid_pos, camera)};
+            } else if current & BUTTON_RIGHT != 0 {
+                if tick_check { move_cursor(Direction::E, grid_pos, camera)};
+            } else {
+                *tick = 0;
             }
 
             let selected = &mut self.current_selected_class[index];
