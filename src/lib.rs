@@ -83,6 +83,10 @@ pub enum CellState {
     // 0, 1
     // 2, 3
     House(BuildingState, u8),
+    
+    // 0, 1
+    // 2, 3
+    AlternativeHouse(BuildingState, u8),
 
     // 0, 1
     // 2, 3
@@ -111,7 +115,7 @@ pub enum CellState {
     Church(BuildingState, u8),
 
     // 0, 1
-    Flowers(u8),
+    Farm(u8),
     
     // 0, 1
     Hay(u8),
@@ -146,6 +150,7 @@ Sprites
 // p1: villager
 // p2: illager
 struct Game {
+    seed: u64,
     rng: Rng,
     villager: u8,
     illager: u8,
@@ -184,6 +189,7 @@ impl Game {
         let grid = terrain::generate(&mut rng);
         
         Self {
+            seed,
             rng,
             villager: 9,
             tick: 0,
@@ -247,11 +253,6 @@ impl Game {
                 None => camera.1 -= 1,
                 _ => {}
             }
-            
-
-            //let camera = (camera.0 as i8, camera.1 as i8);
-
-            //camera.
 
             *cursor = y as u16 * GRID_SIZE_X as u16 + x as u16;
         }
@@ -379,43 +380,6 @@ impl Game {
             }
         }
 
-        // Update the minion values for parent/minion position
-        /*
-        for (index, state) in self.grid.iter().enumerate() {
-            match state {
-                // Illager update link's minion pos
-                CellState::IllagerClan(IllagerClan::Evoker { vex_ids }, _) => {
-                    for id in vex_ids.iter().filter_map(|x| x.as_ref()) {
-                        self.minions
-                            .get_mut(id.get())
-                            .unwrap()
-                            .parent_position_index = index as u8;
-                    }
-                }
-
-                // Vex update link's minion pos
-                CellState::IllagerClan(IllagerClan::Vex { id }, _) => {
-                    self.minions.get_mut(id.get()).unwrap().minion_position_index = index as u8;
-                }
-
-                // Smith update link's parent pos
-                CellState::VillagerClan(VillagerClan::Smith { golem_id: Some(id) }) => {
-                    self.minions
-                        .get_mut(id.get())
-                        .unwrap()
-                        .parent_position_index = index as u8;
-                }
-
-                // Golem update link's minion pos
-                CellState::VillagerClan(VillagerClan::Golem { id, .. }) => {
-                    self.minions.get_mut(id.get()).unwrap().minion_position_index = index as u8;
-                }
-
-                _ => {}
-            }
-        }
-        */
-
         self.grid = suspicious_grid;
     }
 
@@ -455,6 +419,7 @@ impl Game {
     unsafe fn draw_background(&self) {
         *DRAW_COLORS = 0b0011_0011_0011_0011;
         rect(0, 0, 160, 120);
+        //let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
     }
         
     // Common functionality for rendering multi-sprite buildings (houses, church, bell, torch pole)
@@ -496,24 +461,39 @@ impl Game {
 
 
     // Draw the grid with the appropriate sprites
-    unsafe fn draw_sprites(&self) {
+    unsafe fn draw_sprites(&mut self) {
         *DRAW_COLORS = 0b0100_0011_0010_0001;
-        
-        let sprite = self.sheet.bytes;
-        let flags = self.sheet.flags;
 
         // Used for burning buildings
         let burning_x_offset = (self.tick < 30) as u32 * 20;
 
         for base_x in 0..GRID_LOCAL_SIZE_X {
             for base_y in 0..GRID_LOCAL_SIZE_Y {
-                let offset_x = self.view_local_cameras[self.current_player as usize].0;
-                let offset_y = self.view_local_cameras[self.current_player as usize].1;
-                let dst_grid_x = base_x;
-                let dst_grid_y = base_y;
-                let state = &self.grid[grid_from_vec(dst_grid_x + offset_x, dst_grid_y + offset_y) as usize];
-                let dst_x = (dst_grid_x * 10) as i32;
-                let dst_y = (dst_grid_y * 10) as i32;
+                let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
+                let state = &self.grid[grid_from_vec(base_x + offset_x, base_y + offset_y) as usize];
+                let dst_x = (base_x * 10) as i32;
+                let dst_y = (base_y * 10) as i32;
+
+                let (x, flip, variant) = {
+                    let mut v = self.seed;
+                    v ^= (((base_x + offset_x) as u64).overflowing_mul(0x7465646279746573).0) & 0x736f6d6570736575;
+                    v ^= (((base_y + offset_y) as u64).overflowing_mul(0x736f6d6570736575).0) ^ 0x6c7967656e657261;
+                    (v % 10, ((v % 20 > 5) as u32) << 1, ((v % 20 > 5) as u32))
+                };
+
+                if x == 0 && matches!(state, CellState::Empty) {
+                    blit_sub(
+                        &self.sheet.bytes,
+                        dst_x,
+                        dst_y,
+                        10,
+                        10,
+                        50 + variant * 10,
+                        110,
+                        self.sheet.width,
+                        self.sheet.flags | flip,
+                    );
+                }
 
                 match state {
                     CellState::IllagerClan(_type, state) => {
@@ -531,17 +511,7 @@ impl Game {
                             IllagerState::Action => 10,
                         };
                     
-                        blit_sub(
-                            self.sheet.bytes,
-                            dst_x,
-                            dst_y,
-                            10,
-                            10,
-                            src_x,
-                            src_y,
-                            self.sheet.width,
-                            self.sheet.flags,
-                        );
+                        self.draw_sprite(src_x, src_y, dst_x, dst_y)
                     }
 
                     CellState::VillagerClan(_type) => {
@@ -557,17 +527,7 @@ impl Game {
                             },
                         };
 
-                        blit_sub(
-                            sprite,
-                            dst_x,
-                            dst_y,
-                            10,
-                            10,
-                            src_x,
-                            src_y,
-                            self.sheet.width,
-                            flags,
-                        );
+                        self.draw_sprite(src_x, src_y, dst_x, dst_y);
                     }
 
                     CellState::House(state, i) => {
@@ -578,6 +538,16 @@ impl Game {
                         };
 
                         self.draw_multi_sprite(*i, 2, src_x, 20, dst_x, dst_y);
+                    },
+
+                    CellState::AlternativeHouse(state, i) => {
+                        let src_x = match state {
+                            BuildingState::Solid => 0,
+                            BuildingState::Burning => 20 + burning_x_offset,
+                            BuildingState::Destroyed => 60,
+                        };
+
+                        self.draw_multi_sprite(*i, 2, src_x, 60, dst_x, dst_y);
                     },
 
                     CellState::BigRock(i) => self.draw_multi_sprite(*i, 2, 0, 40, dst_x, dst_y),
@@ -594,7 +564,7 @@ impl Game {
                         };
                         self.draw_multi_sprite(*i, 2, src_x, 80, dst_x, dst_y);
                     },
-                    CellState::Flowers(i) => self.draw_multi_sprite(*i, 2, 10, 110, dst_x, dst_y),
+                    CellState::Farm(i) => self.draw_multi_sprite(*i, 2, 10, 110, dst_x, dst_y),
                     CellState::Hay(i) => self.draw_multi_sprite(*i, 2, 30, 110, dst_x, dst_y),
                     _ => continue,
                 }
@@ -609,22 +579,6 @@ impl Game {
             let (mut posx, mut posy) = vec_from_grid(*selector_position);
             posx -= self.view_local_cameras[index].0;
             posy -= self.view_local_cameras[index].1;
-
-            /*
-            // TODO: Should we add the new cursors or keep it like the old ones (where you flip in code)
-            // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
-            blit_sub(
-                self.sheet.bytes,
-                (posx * 10) as i32,
-                (posy * 10) as i32,
-                10,
-                10,
-                30,
-                40 + index as u32 * 10,
-                self.sheet.width,
-                self.sheet.flags,
-            );
-            */
 
             const COLORS: [u8; 2] = [0b1000000, 0b0010000];
             *DRAW_COLORS = COLORS[index] as u16;

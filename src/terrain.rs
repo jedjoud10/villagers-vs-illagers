@@ -16,55 +16,61 @@ pub fn generate(rng: &mut Rng) -> Box<[CellState; AREA]> {
         Feature {
             closure: |i| CellState::House(BuildingState::Solid, i),
             dimensions: (2, 2),
-            max_attempts_to_spawn: 3,
+            max_attempts_to_spawn: 9,
+        },
+
+        Feature {
+            closure: |i| CellState::AlternativeHouse(BuildingState::Solid, i),
+            dimensions: (2, 2),
+            max_attempts_to_spawn: 9,
         },
 
         Feature {
             closure: |i| CellState::Church(BuildingState::Solid, i),
             dimensions: (2, 3),
-            max_attempts_to_spawn: 3,
+            max_attempts_to_spawn: 6,
         },
 
         Feature {
             closure: |i| CellState::BigRock(i),
             dimensions: (2, 2),
-            max_attempts_to_spawn: 3,
+            max_attempts_to_spawn: 6,
         },
 
         Feature {
             closure: |i| CellState::Tree(i),
             dimensions: (2, 2),
-            max_attempts_to_spawn: 7,
+            max_attempts_to_spawn: 14,
         },
 
         Feature {
             closure: |_| CellState::Rock,
             dimensions: (1, 1),
-            max_attempts_to_spawn: 4,
+            max_attempts_to_spawn: 12,
         },
 
         Feature {
             closure: |_| CellState::Bell,
             dimensions: (1, 1),
-            max_attempts_to_spawn: 2,
+            max_attempts_to_spawn: 6,
         },
 
         Feature {
             closure: |i| CellState::Hay(i),
             dimensions: (2, 1),
-            max_attempts_to_spawn: 3,
+            max_attempts_to_spawn: 8,
         },
 
         Feature {
-            closure: |i| CellState::Flowers(i),
+            closure: |i| CellState::Farm(i),
             dimensions: (2, 1),
-            max_attempts_to_spawn: 3,
+            max_attempts_to_spawn: 4,
         },
 
         Feature {
             closure: |i| CellState::Lamppost(i),
             dimensions: (1, 2),
-            max_attempts_to_spawn: 3,
+            max_attempts_to_spawn: 8,
         }
     ];
 
