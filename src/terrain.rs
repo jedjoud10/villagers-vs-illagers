@@ -6,7 +6,7 @@ struct Feature {
     closure: fn(u8) -> CellState,
     probabibility: fn(u8, u8) -> bool,
     dimensions: (u8, u8),
-    max_attempts_to_spawn: u16,
+    spawn_min_max: (u16, u16),
     range_to_spawn: [(u8, u8); 2],
 }
 
@@ -35,7 +35,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 8
             },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 10,
+            spawn_min_max: (1, 4),
             range_to_spawn: [(10, 10), (20, 20)]
         },
 
@@ -50,7 +50,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 8
             },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 10,
+            spawn_min_max: (1, 4),
             range_to_spawn: [(10, 10), (20, 20)]
         },
 
@@ -65,7 +65,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 8
             },
             dimensions: (2, 3),
-            max_attempts_to_spawn: 10,
+            spawn_min_max: (1, 4),
             range_to_spawn: [(10, 10), (20, 20)]
         },
 
@@ -76,7 +76,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) > 15
             },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 10,
+            spawn_min_max: (10, 120),
             range_to_spawn: [(0, 0), (30, 30)]
         },
 
@@ -87,7 +87,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) > 15
             },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 140,
+            spawn_min_max: (50, 140),
             range_to_spawn: [(0, 0), (30, 30)]
         },
 
@@ -98,7 +98,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) > 15
             },
             dimensions: (1, 1),
-            max_attempts_to_spawn: 22,
+            spawn_min_max: (20, 120),
             range_to_spawn: [(0, 0), (30, 30)]
         },
 
@@ -109,7 +109,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 15
             },
             dimensions: (1, 1),
-            max_attempts_to_spawn: 8,
+            spawn_min_max: (1, 8),
             range_to_spawn: [(5, 5), (25, 25)]
         },
 
@@ -120,7 +120,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 15
             },
             dimensions: (2, 1),
-            max_attempts_to_spawn: 8,
+            spawn_min_max: (1, 8),
             range_to_spawn: [(10, 10), (20, 20)]
         },
 
@@ -131,7 +131,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 15
             },
             dimensions: (2, 1),
-            max_attempts_to_spawn: 8,
+            spawn_min_max: (1, 8),
             range_to_spawn: [(8, 8), (22, 22)]
         },
 
@@ -142,13 +142,15 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 15
             },
             dimensions: (1, 2),
-            max_attempts_to_spawn: 8,
+            spawn_min_max: (1, 8),
             range_to_spawn: [(12, 12), (18, 18)]
         }
     ];
 
-    for Feature { closure, probabibility, range_to_spawn, dimensions, max_attempts_to_spawn } in features {
-        for _ in 0..max_attempts_to_spawn {
+    for Feature { closure, probabibility, range_to_spawn, dimensions, spawn_min_max } in features {
+        let mut count = 0;
+        
+        'a: loop {
             let x = fastrand::u8(range_to_spawn[0].0..(range_to_spawn[1].0));
             let y = fastrand::u8(range_to_spawn[0].1..(range_to_spawn[1].1));
             
@@ -157,7 +159,13 @@ pub fn generate() -> Box<[CellState; AREA]> {
             }
             
             let index = grid_from_vec(x, y);
-            spawn_building(index, grid.as_mut_slice(), dimensions.0, dimensions.1, closure);
+            if spawn_building(index, grid.as_mut_slice(), dimensions.0, dimensions.1, closure) {
+                count += 1;
+            }
+
+            if (spawn_min_max.0..spawn_min_max.1).contains(&count) {
+                break 'a;
+            }
         }
     }
 
@@ -168,12 +176,12 @@ pub fn generate() -> Box<[CellState; AREA]> {
 const MAX_BUILDING_COUNT_CACHE: usize = 2*3;
 
 // Spawn any arbitrary building using a lambda closure
-fn spawn_building(index: u16, grid: &mut [CellState], width: u8, height: u8, function: impl Fn(u8) -> CellState) {
+fn spawn_building(index: u16, grid: &mut [CellState], width: u8, height: u8, function: impl Fn(u8) -> CellState) -> bool {
     // Makes sure we won't have a building that "extends" into the map border
     let (x, y) = crate::vec_from_grid(index);
 
     if x > (GRID_SIZE_X - width) || y > (GRID_SIZE_Y - height) {
-        return
+        return false;
     }
 
     // Calculates indices for grid cells that will be modified
@@ -203,11 +211,13 @@ fn spawn_building(index: u16, grid: &mut [CellState], width: u8, height: u8, fun
     if !cache[..count].iter().all(|i| {
         matches!(grid[*i as usize], CellState::Empty)
     }) {
-        return;
+        return false;
     }
 
     // Set the proper cells
     for (variant, &i) in cache[..count].into_iter().enumerate() {
         grid[i as usize] = function(variant as u8);
     }
+
+    true
 }
