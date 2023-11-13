@@ -2,9 +2,7 @@ mod alloc;
 mod sprites;
 mod terrain;
 mod wasm4;
-mod rng;
-use std::mem::transmute;
-use rng::Rng;
+use std::{mem::transmute, ops::BitXor};
 pub use sprites::*;
 use wasm4::*;
 
@@ -151,7 +149,6 @@ Sprites
 // p2: illager
 struct Game {
     seed: u64,
-    rng: Rng,
     villager: u8,
     illager: u8,
     tick: u8,
@@ -185,12 +182,11 @@ impl Game {
             std::mem::size_of::<u64>() as u32,
         );
         
-        let mut rng = Rng::new(seed);
-        let grid = terrain::generate(&mut rng);
+        fastrand::seed(seed);
+        let grid = terrain::generate();
         
         Self {
             seed,
-            rng,
             villager: 9,
             tick: 0,
             illager: 9,
@@ -342,7 +338,7 @@ impl Game {
     }
 
     // Iterate on all pieces
-    unsafe fn update(&mut self) {
+    fn update(&mut self) {
         fn try_move(index: u16, dir: Direction, grid: &mut [CellState]) -> bool {
             let Some(index_2) = apply_direction(index, dir).map(|i| i as usize) else {
                 return false;
@@ -358,22 +354,21 @@ impl Game {
 
         let mut suspicious_grid: Box<[CellState; AREA]> = self.grid.clone();
         let grid_ref: &mut [CellState; AREA] = &mut suspicious_grid;
-        let rng = &mut self.rng;
 
         for (_index, state) in self.grid.iter().enumerate() {
             match state {
                 CellState::IllagerClan(id, _state) => match id {
-                    IllagerClan::Vindicator => { try_move(_index as u16, random_direction(rng, 0..4), grid_ref); }
-                    IllagerClan::Pillager => { try_move(_index as u16, random_direction(rng, 0..4), grid_ref); }
-                    IllagerClan::Evoker { .. } => { try_move(_index as u16, random_direction(rng, 0..4), grid_ref); }
-                    IllagerClan::Vex { .. } => { try_move(_index as u16, random_direction(rng, 0..8), grid_ref); }
+                    IllagerClan::Vindicator => { try_move(_index as u16, random_direction(), grid_ref); }
+                    IllagerClan::Pillager => { try_move(_index as u16, random_direction(), grid_ref); }
+                    IllagerClan::Evoker { .. } => { try_move(_index as u16, random_direction(), grid_ref); }
+                    IllagerClan::Vex { .. } => { try_move(_index as u16, random_direction_with_diagonal(), grid_ref); }
                 },
 
                 CellState::VillagerClan(id) => match id {
-                    VillagerClan::Villager => { try_move(_index as u16, random_direction(rng, 0..4), grid_ref); }
-                    VillagerClan::Farmer => { try_move(_index as u16, random_direction(rng, 0..4), grid_ref); }
-                    VillagerClan::Smith { .. } => { try_move(_index as u16, random_direction(rng, 0..4), grid_ref); }
-                    VillagerClan::Golem { .. } => { try_move(_index as u16, random_direction(rng, 0..4), grid_ref); }
+                    VillagerClan::Villager => { try_move(_index as u16, random_direction(), grid_ref); }
+                    VillagerClan::Farmer => { try_move(_index as u16, random_direction(), grid_ref); }
+                    VillagerClan::Smith { .. } => { try_move(_index as u16, random_direction(), grid_ref); }
+                    VillagerClan::Golem { .. } => { try_move(_index as u16, random_direction(), grid_ref); }
                 },
 
                 _ => continue,
@@ -416,15 +411,14 @@ impl Game {
     }
 
     // Draw the background color
-    unsafe fn draw_background(&self) {
-        *DRAW_COLORS = 0b0011_0011_0011_0011;
+    fn draw_background(&self) {
+        unsafe { *DRAW_COLORS = 0b0011_0011_0011_0011; }
         rect(0, 0, 160, 120);
-        //let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
     }
         
     // Common functionality for rendering multi-sprite buildings (houses, church, bell, torch pole)
     // width and height are in sprite size (so for house this would be 2, 2)
-    unsafe fn draw_multi_sprite(&self, index: u8, mega_width: u8, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
+    fn draw_multi_sprite(&self, index: u8, mega_width: u8, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
         let x_offset = (index % mega_width) as u32;
         let y_offset = (index / mega_width) as u32;
 
@@ -445,7 +439,7 @@ impl Game {
     }
 
     // Draw a single sprite
-    unsafe fn draw_sprite(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
+    fn draw_sprite(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
         blit_sub(
             &self.sheet.bytes,
             dst_x,
@@ -459,9 +453,35 @@ impl Game {
         )
     }
 
+    // Draw a background grass sprite before rendering other sprites
+    fn draw_background_grass(&self, base: (u8, u8), offset: (u8, u8), dst: (i32, i32)) {
+        let (x, flip, variant) = {
+            let a = ((base.0 + offset.0) as u64 + (self.seed.wrapping_mul(0x9E3779B97F4A7C15) % 1684)).wrapping_mul(0x4a9b41c68d);
+            let b = ((base.1 + offset.1) as u64 + (self.seed.wrapping_mul(0x6c7967656e657261) % 6475)).wrapping_mul(0x94ba7c6d9b);
+            let t = 0xffffffffu32 as f32;
+            let hash = ((((a ^ b) as f32) / t) * 10.0) as u32;
+            (hash % 4, ((hash % 16 > 8) as u32) << 1, ((hash % 10 < 3) as u32))
+        };
+
+        if x == 0 {
+            blit_sub(
+                &self.sheet.bytes,
+                dst.0,
+                dst.1,
+                10,
+                10,
+                50 + variant * 10,
+                110,
+                self.sheet.width,
+                self.sheet.flags | flip,
+            );
+        }
+    }
+
 
     // Draw the grid with the appropriate sprites
     unsafe fn draw_sprites(&mut self) {
+
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 
         // Used for burning buildings
@@ -474,26 +494,7 @@ impl Game {
                 let dst_x = (base_x * 10) as i32;
                 let dst_y = (base_y * 10) as i32;
 
-                let (x, flip, variant) = {
-                    let mut v = self.seed;
-                    v ^= (((base_x + offset_x) as u64).overflowing_mul(0x7465646279746573).0) & 0x736f6d6570736575;
-                    v ^= (((base_y + offset_y) as u64).overflowing_mul(0x736f6d6570736575).0) ^ 0x6c7967656e657261;
-                    (v % 10, ((v % 20 > 5) as u32) << 1, ((v % 20 > 5) as u32))
-                };
-
-                if x == 0 && matches!(state, CellState::Empty) {
-                    blit_sub(
-                        &self.sheet.bytes,
-                        dst_x,
-                        dst_y,
-                        10,
-                        10,
-                        50 + variant * 10,
-                        110,
-                        self.sheet.width,
-                        self.sheet.flags | flip,
-                    );
-                }
+                self.draw_background_grass((base_x, base_y), (offset_x, offset_y), (dst_x, dst_y));
 
                 match state {
                     CellState::IllagerClan(_type, state) => {
@@ -640,8 +641,12 @@ fn apply_direction(index: u16, dir: Direction) -> Option<u16> {
     ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x)).then(|| grid_from_vec(x as u8, y as u8))
 }
 
-unsafe fn random_direction(rng: &mut Rng, range: std::ops::Range<u8>) -> Direction {
-    transmute::<u8, Direction>(rng.u8(range))
+fn random_direction() -> Direction {
+    unsafe { transmute::<u8, Direction>(fastrand::u8(0..4)) }
+}
+
+fn random_direction_with_diagonal() -> Direction {
+    unsafe { transmute::<u8, Direction>(fastrand::u8(0..8)) }
 }
 
 #[no_mangle]

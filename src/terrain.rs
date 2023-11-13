@@ -1,83 +1,163 @@
-use crate::{CellState, BuildingState, AREA, GRID_SIZE_X, GRID_SIZE_Y, rng::Rng};
+use crate::{CellState, BuildingState, AREA, GRID_SIZE_X, GRID_SIZE_Y, vec_from_grid, grid_from_vec};
+
 
 // Terrain feature that we could generate
 struct Feature {
     closure: fn(u8) -> CellState,
+    probabibility: fn(u8, u8) -> bool,
     dimensions: (u8, u8),
-    max_attempts_to_spawn: u8,
+    max_attempts_to_spawn: u16,
+    range_to_spawn: [(u8, u8); 2],
+}
+
+fn dist(x: i8, y: i8, center_x: i8, center_y: i8) -> u8 {
+    // variant that makes it a diagonal (manhattan distance)
+    //((x - center_x).abs() + (y - center_y).abs()) as u8
+    
+    // variant that makes it a perfect square (chebyshev distance)
+    (x - center_x).abs().max((y - center_y).abs()) as u8 * 2
 }
 
 // Generate a grid with some interesting terrain
-pub fn generate(rng: &mut Rng) -> Box<[CellState; AREA]> {
+pub fn generate() -> Box<[CellState; AREA]> {
     let temp = vec![CellState::Empty; AREA].into_boxed_slice();
     let mut grid: Box<[CellState; AREA]> = unsafe { Box::from_raw(Box::into_raw(temp) as *mut [CellState; AREA]) };
 
     let features = [
         Feature {
             closure: |i| CellState::House(BuildingState::Solid, i),
+            probabibility: |x, y| {
+                if x % 3 < 2 {
+                    return false;       
+                }
+    
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 8
+            },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 9,
+            max_attempts_to_spawn: 10,
+            range_to_spawn: [(10, 10), (20, 20)]
         },
 
         Feature {
             closure: |i| CellState::AlternativeHouse(BuildingState::Solid, i),
+            probabibility: |x, y| {
+                if x % 3 < 2 {
+                    return false;       
+                }
+    
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 8
+            },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 9,
+            max_attempts_to_spawn: 10,
+            range_to_spawn: [(10, 10), (20, 20)]
         },
 
         Feature {
             closure: |i| CellState::Church(BuildingState::Solid, i),
+            probabibility: |x, y| {
+                if x % 3 < 2 {
+                    return false;       
+                }
+    
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 8
+            },
             dimensions: (2, 3),
-            max_attempts_to_spawn: 6,
+            max_attempts_to_spawn: 10,
+            range_to_spawn: [(10, 10), (20, 20)]
         },
 
         Feature {
             closure: |i| CellState::BigRock(i),
+            probabibility: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) > 15
+            },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 6,
+            max_attempts_to_spawn: 10,
+            range_to_spawn: [(0, 0), (30, 30)]
         },
 
         Feature {
             closure: |i| CellState::Tree(i),
+            probabibility: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) > 15
+            },
             dimensions: (2, 2),
-            max_attempts_to_spawn: 14,
+            max_attempts_to_spawn: 140,
+            range_to_spawn: [(0, 0), (30, 30)]
         },
 
         Feature {
             closure: |_| CellState::Rock,
+            probabibility: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) > 15
+            },
             dimensions: (1, 1),
-            max_attempts_to_spawn: 12,
+            max_attempts_to_spawn: 22,
+            range_to_spawn: [(0, 0), (30, 30)]
         },
 
         Feature {
             closure: |_| CellState::Bell,
+            probabibility: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 15
+            },
             dimensions: (1, 1),
-            max_attempts_to_spawn: 6,
+            max_attempts_to_spawn: 8,
+            range_to_spawn: [(5, 5), (25, 25)]
         },
 
         Feature {
             closure: |i| CellState::Hay(i),
+            probabibility: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 15
+            },
             dimensions: (2, 1),
             max_attempts_to_spawn: 8,
+            range_to_spawn: [(10, 10), (20, 20)]
         },
 
         Feature {
             closure: |i| CellState::Farm(i),
+            probabibility: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 15
+            },
             dimensions: (2, 1),
-            max_attempts_to_spawn: 4,
+            max_attempts_to_spawn: 8,
+            range_to_spawn: [(8, 8), (22, 22)]
         },
 
         Feature {
             closure: |i| CellState::Lamppost(i),
+            probabibility: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 15
+            },
             dimensions: (1, 2),
             max_attempts_to_spawn: 8,
+            range_to_spawn: [(12, 12), (18, 18)]
         }
     ];
 
-    for Feature { closure, dimensions, max_attempts_to_spawn } in features {
+    for Feature { closure, probabibility, range_to_spawn, dimensions, max_attempts_to_spawn } in features {
         for _ in 0..max_attempts_to_spawn {
-            let x = rng.u16(0..(AREA as u16));
-            spawn_building(x, grid.as_mut_slice(), dimensions.0, dimensions.1, closure);
+            let x = fastrand::u8(range_to_spawn[0].0..(range_to_spawn[1].0));
+            let y = fastrand::u8(range_to_spawn[0].1..(range_to_spawn[1].1));
+            
+            if !probabibility(x, y) {
+                continue;
+            }
+            
+            let index = grid_from_vec(x, y);
+            spawn_building(index, grid.as_mut_slice(), dimensions.0, dimensions.1, closure);
         }
     }
 
@@ -92,7 +172,7 @@ fn spawn_building(index: u16, grid: &mut [CellState], width: u8, height: u8, fun
     // Makes sure we won't have a building that "extends" into the map border
     let (x, y) = crate::vec_from_grid(index);
 
-    if x >= (GRID_SIZE_X - width) || y >= (GRID_SIZE_Y - height) {
+    if x > (GRID_SIZE_X - width) || y > (GRID_SIZE_Y - height) {
         return
     }
 
