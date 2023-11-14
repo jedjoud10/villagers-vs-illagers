@@ -84,7 +84,7 @@ pub enum CellState {
     
     // 0, 1
     // 2, 3
-    AlternativeHouse(BuildingState, u8),
+    House2(BuildingState, u8),
 
     // 0, 1
     // 2, 3
@@ -212,7 +212,7 @@ impl Game {
         self.draw_sprites();
         self.draw_footer();
         self.draw_cursors();
-        self.debug_palette();
+        //self.debug_palette();
         
 
         self.tick += 1;
@@ -380,34 +380,58 @@ impl Game {
 
     // Draw a footer containing points, classes to summon, and current selected cell
     unsafe fn draw_footer(&mut self) {
-        *DRAW_COLORS = 0b1000000;
-        rect(0, 120, 160, 40);
+
+        *DRAW_COLORS = 0b0100000;
+        rect(0, 120, 160, 35);
+
+        *DRAW_COLORS = 0b1000100;
+        rect(0, 155, 160, 5);
 
         *DRAW_COLORS = 0b0100_0000_0000_0100;
-        text("V: ", 2, 122);
-        text("I: ", 2, 132);
-
         let mut buffer = itoa::Buffer::new();
-        text(buffer.format(self.villager), 16, 122);
-        text(buffer.format(self.illager), 16, 132);
+        text(buffer.format(self.villager), 71, 135);
 
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 
-        // Draw mini-icon for selectors
-        for index in 0..2i32 {
-            /*
-            match index {
-                0 => {
-                    //blit(&SPRITE, 120, 122, SPRITE_WIDTH, SPRITE_HEIGHT, SPRITE_FLAGS);
-
-                },
-                1 => {
-
-                }
-                _ => {}
-            }
-            */
+        // Draw class portraits - width 17, height 27
+        for x in 0..3 {
+            self.draw_sprite(
+                4 + 19 * x,
+                124,
+                17,
+                27,
+                0 + 17 * x as u32,
+                120 + self.current_player as u32 * 27
+            )
         }
+
+        // Draw action buttons - width 9, height 9
+        for x in 0..3 {
+            self.draw_sprite(61 + 11 * x, 124, 9, 9, 51, 147 + 9 * x as u32)
+        }
+
+        // Draw villager and emerald symbols (text above)
+        self.draw_sprite(62, 135, 6, 7, 51, 123);
+        self.draw_sprite(62, 144, 6, 7, 51, 130);
+
+
+        // Draw selection cursor todo
+
+        // Draw log? todo
+    }
+
+    fn draw_sprite(&self, x: i32, y: i32, width: u32, height: u32, src_x: u32, src_y: u32) {
+        blit_sub(
+            &self.sheet.bytes,
+            x,
+            y,
+            width,
+            height,
+            src_x,
+            src_y,
+            self.sheet.width,
+            self.sheet.flags,
+        );
     }
 
     // Draw the background color
@@ -418,39 +442,19 @@ impl Game {
         
     // Common functionality for rendering multi-sprite buildings (houses, church, bell, torch pole)
     // width and height are in sprite size (so for house this would be 2, 2)
-    fn draw_multi_sprite(&self, index: u8, mega_width: u8, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
+    fn draw_multi_grid_sprite(&self, index: u8, mega_width: u8, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
         let x_offset = (index % mega_width) as u32;
         let y_offset = (index / mega_width) as u32;
 
         let act_src_y = y_offset * 10 + src_y;
         let act_src_x = x_offset * 10 + src_x;
 
-        blit_sub(
-            &self.sheet.bytes,
-            dst_x,
-            dst_y,
-            10,
-            10,
-            act_src_x,
-            act_src_y,
-            self.sheet.width,
-            self.sheet.flags,
-        )
+        self.draw_grid_sprite(act_src_x, act_src_y, dst_x, dst_y)
     }
 
-    // Draw a single sprite
-    fn draw_sprite(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
-        blit_sub(
-            &self.sheet.bytes,
-            dst_x,
-            dst_y,
-            10,
-            10,
-            src_x,
-            src_y,
-            self.sheet.width,
-            self.sheet.flags,
-        )
+    // Util function for grid sprites only
+    fn draw_grid_sprite(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
+        self.draw_sprite(dst_x, dst_y, 10, 10, src_x, src_y)
     }
 
     // Draw a background grass sprite before rendering other sprites
@@ -512,7 +516,7 @@ impl Game {
                             IllagerState::Action => 10,
                         };
                     
-                        self.draw_sprite(src_x, src_y, dst_x, dst_y)
+                        self.draw_grid_sprite(src_x, src_y, dst_x, dst_y)
                     }
 
                     CellState::VillagerClan(_type) => {
@@ -528,7 +532,7 @@ impl Game {
                             },
                         };
 
-                        self.draw_sprite(src_x, src_y, dst_x, dst_y);
+                        self.draw_grid_sprite(src_x, src_y, dst_x, dst_y);
                     }
 
                     CellState::House(state, i) => {
@@ -538,35 +542,35 @@ impl Game {
                             BuildingState::Destroyed => 60,
                         };
 
-                        self.draw_multi_sprite(*i, 2, src_x, 20, dst_x, dst_y);
+                        self.draw_multi_grid_sprite(*i, 2, src_x, 20, dst_x, dst_y);
                     },
 
-                    CellState::AlternativeHouse(state, i) => {
+                    CellState::House2(state, i) => {
                         let src_x = match state {
                             BuildingState::Solid => 0,
                             BuildingState::Burning => 20 + burning_x_offset,
                             BuildingState::Destroyed => 60,
                         };
 
-                        self.draw_multi_sprite(*i, 2, src_x, 60, dst_x, dst_y);
+                        self.draw_multi_grid_sprite(*i, 2, src_x, 60, dst_x, dst_y);
                     },
 
-                    CellState::BigRock(i) => self.draw_multi_sprite(*i, 2, 0, 40, dst_x, dst_y),
-                    CellState::Rock => self.draw_sprite(30, 40, dst_x, dst_y),
-                    CellState::Lamppost(i) => self.draw_multi_sprite(*i, 1, 20, 40, dst_x, dst_y),
-                    CellState::Bell => self.draw_sprite(30, 50, dst_x, dst_y),
-                    CellState::Tree(i) => self.draw_multi_sprite(*i, 2, 40, 40, dst_x, dst_y),
-                    CellState::Stand(i) => self.draw_multi_sprite(*i, 2, 60, 40, dst_x, dst_y),
+                    CellState::BigRock(i) => self.draw_multi_grid_sprite(*i, 2, 0, 40, dst_x, dst_y),
+                    CellState::Rock => self.draw_grid_sprite(30, 40, dst_x, dst_y),
+                    CellState::Lamppost(i) => self.draw_multi_grid_sprite(*i, 1, 20, 40, dst_x, dst_y),
+                    CellState::Bell => self.draw_grid_sprite(30, 50, dst_x, dst_y),
+                    CellState::Tree(i) => self.draw_multi_grid_sprite(*i, 2, 40, 40, dst_x, dst_y),
+                    CellState::Stand(i) => self.draw_multi_grid_sprite(*i, 2, 60, 40, dst_x, dst_y),
                     CellState::Church(state, i) => {
                         let src_x = match state {
                             BuildingState::Solid => 0,
                             BuildingState::Burning => 20 + burning_x_offset,
                             BuildingState::Destroyed => 60,
                         };
-                        self.draw_multi_sprite(*i, 2, src_x, 80, dst_x, dst_y);
+                        self.draw_multi_grid_sprite(*i, 2, src_x, 80, dst_x, dst_y);
                     },
-                    CellState::Farm(i) => self.draw_multi_sprite(*i, 2, 10, 110, dst_x, dst_y),
-                    CellState::Hay(i) => self.draw_multi_sprite(*i, 2, 30, 110, dst_x, dst_y),
+                    CellState::Farm(i) => self.draw_multi_grid_sprite(*i, 2, 10, 110, dst_x, dst_y),
+                    CellState::Hay(i) => self.draw_multi_grid_sprite(*i, 2, 30, 110, dst_x, dst_y),
                     _ => continue,
                 }
             }

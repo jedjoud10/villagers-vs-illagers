@@ -40,7 +40,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
 
         Feature {
-            closure: |i| CellState::AlternativeHouse(BuildingState::Solid, i),
+            closure: |i| CellState::House2(BuildingState::Solid, i),
             probabibility: |x, y| {
                 if x % 3 < 2 {
                     return false;       
