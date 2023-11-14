@@ -149,8 +149,7 @@ Sprites
 // p2: illager
 struct Game {
     seed: u64,
-    villager: u8,
-    illager: u8,
+    emeralds: [u8; 2],
     tick: u8,
     cursors: [u16; 2],
     old_gamepad: [u8; 2],
@@ -187,9 +186,8 @@ impl Game {
         
         Self {
             seed,
-            villager: 9,
+            emeralds: [10, 10],
             tick: 0,
-            illager: 9,
             cursors: [0, 0],
             current_player: 0, 
             new_gamepad: [0; 2],
@@ -203,10 +201,14 @@ impl Game {
     }
 
     unsafe fn run(&mut self) {
-        if (*NETPLAY >> 2) == 0 {
-            text("Mohsin cannot ", 0, 0);
-            text("play alone....", 0, 10);
-        } else {
+        if (*NETPLAY >> 2) == 0 && false {
+            *DRAW_COLORS = 0b0100_0000_0000_0100;
+            text("Waiting for", 36, 20);
+            text("player 2", 46, 30);
+            text("and mohsin", 38, 40);
+            *DRAW_COLORS = 0b0100_0011_0010_0001;
+            self.draw_sprite(40, 8, 80, 10, 0, 180)
+        } else {    
             self.current_player = *NETPLAY & 0b11;
 
             if self.tick == 0 {
@@ -290,16 +292,12 @@ impl Game {
             // Cycle current selected class
             if new & BUTTON_2 != 0 {
                 *selected += 1;
-                *selected %= 3;
+                *selected %= 6;
             }
 
             // Place currently selected class
             if new & BUTTON_1 != 0 {
-                let points: &mut u8 = if index == 0 {
-                    &mut self.villager
-                } else {
-                    &mut self.illager
-                };
+                let points: &mut u8 = &mut self.emeralds[index];
 
                 // make sure the cell is empty so we can place our shit there
                 if matches!(self.grid[*grid_pos as usize], CellState::Empty) {
@@ -335,7 +333,7 @@ impl Game {
                                 IllagerState::Idle,
                             ),
 
-                            _ => unreachable!(),
+                            _ => { CellState::Empty },
                         };
                     }
                 }
@@ -386,6 +384,7 @@ impl Game {
 
     // Draw a footer containing points, classes to summon, and current selected cell
     unsafe fn draw_footer(&mut self) {
+        let class = self.current_selected_class[self.current_player as usize];
 
         *DRAW_COLORS = 0b0100000;
         rect(0, 120, 160, 35);
@@ -395,17 +394,21 @@ impl Game {
 
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         let mut buffer = itoa::Buffer::new();
-        text(buffer.format(self.villager), 71, 135);
+        text(buffer.format(self.emeralds[self.current_player as usize]), 71, 135);
+
+        // DEBUG!!!!!!!!!!!! This shows currently selected class lol (not meant to)
+        text(buffer.format(class), 71, 144);
 
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 
         // Draw class portraits - width 17, height 27
         for x in 0..3 {
+            let offset: i32 = if class == x as u8 {1} else {0};
             self.draw_sprite(
-                4 + 19 * x,
-                124,
-                17,
-                27,
+                4 + 19 * x + offset,
+                124 + offset,
+                17 - offset as u32,
+                27 - offset as u32,
                 0 + 17 * x as u32,
                 120 + self.current_player as u32 * 27
             )
@@ -413,15 +416,20 @@ impl Game {
 
         // Draw action buttons - width 9, height 9
         for x in 0..3 {
-            self.draw_sprite(61 + 11 * x, 124, 9, 9, 51, 147 + 9 * x as u32)
+            let offset: i32 = if class == x as u8 + 3 {1} else {0};
+            self.draw_sprite(
+                61 + 11 * x + offset,
+                124 + offset,
+                9 - offset as u32,
+                9 - offset as u32,
+                51,
+                147 + 9 * x as u32
+            )
         }
 
         // Draw villager and emerald symbols (text above)
         self.draw_sprite(62, 135, 6, 7, 51, 123);
         self.draw_sprite(62, 144, 6, 7, 51, 130);
-
-
-        // Draw selection cursor todo
 
         // Draw log? todo
     }
@@ -480,7 +488,7 @@ impl Game {
                 dst.1,
                 10,
                 10,
-                50 + variant * 10,
+                60 + variant * 10,
                 110,
                 self.sheet.width,
                 self.sheet.flags | flip,
@@ -575,8 +583,8 @@ impl Game {
                         };
                         self.draw_multi_grid_sprite(*i, 2, src_x, 80, dst_x, dst_y);
                     },
-                    CellState::Farm(i) => self.draw_multi_grid_sprite(*i, 2, 10, 110, dst_x, dst_y),
-                    CellState::Hay(i) => self.draw_multi_grid_sprite(*i, 2, 30, 110, dst_x, dst_y),
+                    CellState::Farm(i) => self.draw_multi_grid_sprite(*i, 2, 0, 110, dst_x, dst_y),
+                    CellState::Hay(i) => self.draw_multi_grid_sprite(*i, 2, 40, 110, dst_x, dst_y),
                     _ => continue,
                 }
             }
