@@ -2,8 +2,8 @@ mod alloc;
 mod sprites;
 mod terrain;
 mod wasm4;
-use std::mem::transmute;
 pub use sprites::*;
+use std::mem::transmute;
 use wasm4::*;
 
 static mut GAME: Option<Game> = None;
@@ -81,7 +81,7 @@ pub enum CellState {
     // 0, 1
     // 2, 3
     House(BuildingState, u8),
-    
+
     // 0, 1
     // 2, 3
     House2(BuildingState, u8),
@@ -114,7 +114,7 @@ pub enum CellState {
 
     // 0, 1
     Farm(u8),
-    
+
     // 0, 1
     Hay(u8),
 }
@@ -181,16 +181,16 @@ impl Game {
             (&mut seed as *mut u64).cast::<u8>(),
             std::mem::size_of::<u64>() as u32,
         );
-        
+
         fastrand::seed(seed);
         let grid = terrain::generate();
-        
+
         Self {
             seed,
             emeralds: [200, 100],
             tick: 0,
             cursors: [0, 0],
-            current_player: 0, 
+            current_player: 0,
             button_held: [false, false],
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
@@ -210,13 +210,13 @@ impl Game {
             text("and mohsin", 38, 40);
             *DRAW_COLORS = 0b0100_0011_0010_0001;
             self.draw_sprite(40, 8, 80, 10, 0, 180)
-        } else {    
+        } else {
             self.current_player = *NETPLAY & 0b11;
 
             if self.tick == 0 {
                 self.update();
             }
-    
+
             self.fetch_input();
             self.draw_background();
             self.draw_sprites();
@@ -240,8 +240,8 @@ impl Game {
             x += step_x;
             y += step_y;
 
-            let x = x.clamp(0, GRID_SIZE_X as i8-1) as u8;
-            let y = y.clamp(0, GRID_SIZE_Y as i8-1) as u8;
+            let x = x.clamp(0, GRID_SIZE_X as i8 - 1) as u8;
+            let y = y.clamp(0, GRID_SIZE_Y as i8 - 1) as u8;
 
             match x.checked_sub(camera.0) {
                 Some(x) if x >= GRID_LOCAL_SIZE_X => camera.0 += 1,
@@ -280,39 +280,79 @@ impl Game {
 
             match &self.grid[*grid_pos as usize] {
                 CellState::House(_x, y) | CellState::House2(_x, y) => {
-                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
-                    if y > &1 {step_up *= 2} else {step_down *= 2};
+                    if y % 2 == 0 {
+                        step_right *= 2
+                    } else {
+                        step_left *= 2
+                    };
+                    if y > &1 {
+                        step_up *= 2
+                    } else {
+                        step_down *= 2
+                    };
                 }
-    
-                CellState::Church(_x, y) => { 
-                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
-                    if y > &3 {step_up *= 3} else {step_down *= 3};
+
+                CellState::Church(_x, y) => {
+                    if y % 2 == 0 {
+                        step_right *= 2
+                    } else {
+                        step_left *= 2
+                    };
+                    if y > &3 {
+                        step_up *= 3
+                    } else {
+                        step_down *= 3
+                    };
                 }
-    
+
                 CellState::BigRock(y) | CellState::Tree(y) | CellState::Stand(y) => {
-                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
-                    if y > &1 {step_up *= 2} else {step_down *= 2};
+                    if y % 2 == 0 {
+                        step_right *= 2
+                    } else {
+                        step_left *= 2
+                    };
+                    if y > &1 {
+                        step_up *= 2
+                    } else {
+                        step_down *= 2
+                    };
                 }
-    
+
                 CellState::Lamppost(y) => {
-                    if y > &1 {step_up *= 2} else {step_down *= 2};
+                    if y > &1 {
+                        step_up *= 2
+                    } else {
+                        step_down *= 2
+                    };
                 }
-    
+
                 CellState::Farm(y) | CellState::Hay(y) => {
-                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
+                    if y % 2 == 0 {
+                        step_right *= 2
+                    } else {
+                        step_left *= 2
+                    };
                 }
-                
+
                 _ => {}
             }
 
             if current & BUTTON_UP != 0 {
-                if tick_check { move_cursor(0, step_up, grid_pos, camera)};
+                if tick_check {
+                    move_cursor(0, step_up, grid_pos, camera)
+                };
             } else if current & BUTTON_DOWN != 0 {
-                if tick_check { move_cursor(0, step_down, grid_pos, camera)};
+                if tick_check {
+                    move_cursor(0, step_down, grid_pos, camera)
+                };
             } else if current & BUTTON_LEFT != 0 {
-                if tick_check { move_cursor(step_left, 0, grid_pos, camera)};
+                if tick_check {
+                    move_cursor(step_left, 0, grid_pos, camera)
+                };
             } else if current & BUTTON_RIGHT != 0 {
-                if tick_check { move_cursor(step_right, 0, grid_pos, camera)};
+                if tick_check {
+                    move_cursor(step_right, 0, grid_pos, camera)
+                };
             } else {
                 *tick = 0;
             }
@@ -347,9 +387,7 @@ impl Game {
                             // villager clan classes
                             (0, 0) => CellState::VillagerClan(VillagerClan::Villager),
                             (0, 1) => CellState::VillagerClan(VillagerClan::Farmer),
-                            (0, 2) => {
-                                CellState::VillagerClan(VillagerClan::Smith(0))
-                            }
+                            (0, 2) => CellState::VillagerClan(VillagerClan::Smith(0)),
 
                             // illager clan classes
                             (1, 0) => {
@@ -358,12 +396,11 @@ impl Game {
                             (1, 1) => {
                                 CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
                             }
-                            (1, 2) => CellState::IllagerClan(
-                                IllagerClan::Evoker(0),
-                                IllagerState::Idle,
-                            ),
+                            (1, 2) => {
+                                CellState::IllagerClan(IllagerClan::Evoker(0), IllagerState::Idle)
+                            }
 
-                            _ => { CellState::Empty },
+                            _ => CellState::Empty,
                         };
                     }
                 }
@@ -394,17 +431,33 @@ impl Game {
         for (_index, state) in self.grid.iter().enumerate() {
             match state {
                 CellState::IllagerClan(id, _state) => match id {
-                    IllagerClan::Vindicator => { try_move(_index as u16, random_direction(), grid_ref); }
-                    IllagerClan::Pillager => { try_move(_index as u16, random_direction(), grid_ref); }
-                    IllagerClan::Evoker { .. } => { try_move(_index as u16, random_direction(), grid_ref); }
-                    IllagerClan::Vex { .. } => { try_move(_index as u16, random_direction_with_diagonal(), grid_ref); }
+                    IllagerClan::Vindicator => {
+                        try_move(_index as u16, random_direction(), grid_ref);
+                    }
+                    IllagerClan::Pillager => {
+                        try_move(_index as u16, random_direction(), grid_ref);
+                    }
+                    IllagerClan::Evoker { .. } => {
+                        try_move(_index as u16, random_direction(), grid_ref);
+                    }
+                    IllagerClan::Vex { .. } => {
+                        try_move(_index as u16, random_direction_with_diagonal(), grid_ref);
+                    }
                 },
 
                 CellState::VillagerClan(id) => match id {
-                    VillagerClan::Villager => { try_move(_index as u16, random_direction(), grid_ref); }
-                    VillagerClan::Farmer => { try_move(_index as u16, random_direction(), grid_ref); }
-                    VillagerClan::Smith { .. } => { try_move(_index as u16, random_direction(), grid_ref); }
-                    VillagerClan::Golem { .. } => { try_move(_index as u16, random_direction(), grid_ref); }
+                    VillagerClan::Villager => {
+                        try_move(_index as u16, random_direction(), grid_ref);
+                    }
+                    VillagerClan::Farmer => {
+                        try_move(_index as u16, random_direction(), grid_ref);
+                    }
+                    VillagerClan::Smith { .. } => {
+                        try_move(_index as u16, random_direction(), grid_ref);
+                    }
+                    VillagerClan::Golem { .. } => {
+                        try_move(_index as u16, random_direction(), grid_ref);
+                    }
                 },
 
                 _ => continue,
@@ -426,7 +479,11 @@ impl Game {
 
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         let mut buffer = itoa::Buffer::new();
-        text(buffer.format(self.emeralds[self.current_player as usize]), 71, 135);
+        text(
+            buffer.format(self.emeralds[self.current_player as usize]),
+            71,
+            135,
+        );
 
         // DEBUG!!!!!!!!!!!! This shows currently selected class lol (not meant to)
         text(buffer.format(class), 71, 144);
@@ -436,27 +493,31 @@ impl Game {
 
         // Draw class portraits - width 17, height 27
         for x in 0..3 {
-            let offset: u8 = if class == x as u8 && !button {0} else {1};
+            let offset: u8 = if class == x as u8 && !button { 0 } else { 1 };
             self.draw_sprite(
-                4 + 19 * x + offset,
-                124 + offset,
+                4 + 19 * x as i32 + offset as i32,
+                124 + offset as i32,
                 17 - offset as u32,
                 27 - offset as u32,
                 0 + 17 * x as u32,
-                120 + self.current_player as u32 * 27
+                120 + self.current_player as u32 * 27,
             )
         }
 
         // Draw action buttons - width 9, height 9
         for x in 0..3 {
-            let offset: i32 = if class == x as u8 + 3 && !button {0} else {1};
+            let offset: i32 = if class == x as u8 + 3 && !button {
+                0
+            } else {
+                1
+            };
             self.draw_sprite(
                 61 + 11 * x + offset,
                 124 + offset,
                 9 - offset as u32,
                 9 - offset as u32,
                 51,
-                147 + 9 * x as u32
+                147 + 9 * x as u32,
             )
         }
 
@@ -467,15 +528,16 @@ impl Game {
         // Draw log? todo
     }
 
-    fn draw_sprite(&self, x: u8, y: u8, width: u8, height: u8, src_x: u8, src_y: u8) {
+    // Draw a general sprite from the main sprite sheet
+    fn draw_sprite(&self, x: i32, y: i32, width: u32, height: u32, src_x: u32, src_y: u32) {
         blit_sub(
             &self.sheet.bytes,
-            x as i32,
-            y as i32,
-            width as u32,
-            height as u32,
-            src_x as u32,
-            src_y as u32,
+            x,
+            y,
+            width,
+            height,
+            src_x,
+            src_y,
             self.sheet.width,
             self.sheet.flags,
         );
@@ -483,20 +545,26 @@ impl Game {
 
     // Draw the background color
     fn draw_background(&self) {
-        unsafe { *DRAW_COLORS = 0b0011_0011_0011_0011; }
+        unsafe {
+            *DRAW_COLORS = 0b0011_0011_0011_0011;
+        }
         rect(0, 0, 160, 120);
     }
-        
+
     // Common functionality for rendering multi-sprite buildings (houses, church, bell, torch pole)
     // width and height are in sprite size (so for house this would be 2, 2)
-    fn draw_multi_grid_sprite(&self, index: u8, mega_width: u8, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
+    fn draw_multi_grid_sprite(
+        &self,
+        index: u8,
+        mega_width: u8,
+        src_x: u32,
+        src_y: u32,
+        dst_x: i32,
+        dst_y: i32,
+    ) {
         let x_offset = (index % mega_width) as u32;
         let y_offset = (index / mega_width) as u32;
-
-        let act_src_y = y_offset * 10 + src_y;
-        let act_src_x = x_offset * 10 + src_x;
-
-        self.draw_grid_sprite(act_src_x, act_src_y, dst_x, dst_y)
+        self.draw_grid_sprite(x_offset * 10 + src_x, y_offset * 10 + src_y, dst_x, dst_y)
     }
 
     // Util function for grid sprites only
@@ -507,11 +575,19 @@ impl Game {
     // Draw a background grass sprite before rendering other sprites
     fn draw_background_grass(&self, base: (u8, u8), offset: (u8, u8), dst: (i32, i32)) {
         let (x, flip, variant) = {
-            let a = ((base.0 + offset.0) as u64 + (self.seed.wrapping_mul(0x9E3779B97F4A7C15) % 1684)).wrapping_mul(0x4a9b41c68d);
-            let b = ((base.1 + offset.1) as u64 + (self.seed.wrapping_mul(0x6c7967656e657261) % 6475)).wrapping_mul(0x94ba7c6d9b);
+            let a = ((base.0 + offset.0) as u64
+                + (self.seed.wrapping_mul(0x9E3779B97F4A7C15) % 1684))
+                .wrapping_mul(0x4a9b41c68d);
+            let b = ((base.1 + offset.1) as u64
+                + (self.seed.wrapping_mul(0x6c7967656e657261) % 6475))
+                .wrapping_mul(0x94ba7c6d9b);
             let t = 0xffffffffu32 as f32;
             let hash = ((((a ^ b) as f32) / t) * 10.0) as u32;
-            (hash % 4, ((hash % 16 > 8) as u32) << 1, ((hash % 10 < 3) as u32))
+            (
+                hash % 4,
+                ((hash % 16 > 8) as u32) << 1,
+                ((hash % 10 < 3) as u32),
+            )
         };
 
         if x == 0 {
@@ -529,10 +605,8 @@ impl Game {
         }
     }
 
-
     // Draw the grid with the appropriate sprites
     unsafe fn draw_sprites(&mut self) {
-
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 
         // Used for burning buildings
@@ -541,7 +615,8 @@ impl Game {
         for base_x in 0..GRID_LOCAL_SIZE_X {
             for base_y in 0..GRID_LOCAL_SIZE_Y {
                 let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
-                let state = &self.grid[grid_from_vec(base_x + offset_x, base_y + offset_y) as usize];
+                let state =
+                    &self.grid[grid_from_vec(base_x + offset_x, base_y + offset_y) as usize];
                 let dst_x = (base_x * 10) as i32;
                 let dst_y = (base_y * 10) as i32;
 
@@ -556,13 +631,13 @@ impl Game {
                             IllagerClan::Evoker { .. } => 20,
                             IllagerClan::Vex { .. } => 30,
                         };
-                    
+
                         // src y pos from the sprite sheet
                         let src_y = match state {
                             IllagerState::Idle => 0,
                             IllagerState::Action => 10,
                         };
-                    
+
                         self.draw_grid_sprite(src_x, src_y, dst_x, dst_y)
                     }
 
@@ -590,7 +665,7 @@ impl Game {
                         };
 
                         self.draw_multi_grid_sprite(*i, 2, src_x, 20, dst_x, dst_y);
-                    },
+                    }
 
                     CellState::House2(state, i) => {
                         let src_x = match state {
@@ -600,11 +675,15 @@ impl Game {
                         };
 
                         self.draw_multi_grid_sprite(*i, 2, src_x, 60, dst_x, dst_y);
-                    },
+                    }
 
-                    CellState::BigRock(i) => self.draw_multi_grid_sprite(*i, 2, 0, 40, dst_x, dst_y),
+                    CellState::BigRock(i) => {
+                        self.draw_multi_grid_sprite(*i, 2, 0, 40, dst_x, dst_y)
+                    }
                     CellState::Rock => self.draw_grid_sprite(30, 40, dst_x, dst_y),
-                    CellState::Lamppost(i) => self.draw_multi_grid_sprite(*i, 1, 20, 40, dst_x, dst_y),
+                    CellState::Lamppost(i) => {
+                        self.draw_multi_grid_sprite(*i, 1, 20, 40, dst_x, dst_y)
+                    }
                     CellState::Bell => self.draw_grid_sprite(30, 50, dst_x, dst_y),
                     CellState::Tree(i) => self.draw_multi_grid_sprite(*i, 2, 40, 40, dst_x, dst_y),
                     CellState::Stand(i) => self.draw_multi_grid_sprite(*i, 2, 60, 40, dst_x, dst_y),
@@ -615,7 +694,7 @@ impl Game {
                             BuildingState::Destroyed => 60,
                         };
                         self.draw_multi_grid_sprite(*i, 2, src_x, 80, dst_x, dst_y);
-                    },
+                    }
                     CellState::Farm(i) => self.draw_multi_grid_sprite(*i, 2, 0, 110, dst_x, dst_y),
                     CellState::Hay(i) => self.draw_multi_grid_sprite(*i, 2, 40, 110, dst_x, dst_y),
                     _ => continue,
@@ -628,56 +707,76 @@ impl Game {
     unsafe fn draw_cursors(&self) {
         *DRAW_COLORS = 0b0000_0000_0001_0000;
         let index = self.current_player as usize;
-        let (mut posx, mut posy) = vec_from_grid(self.cursors[index]);
-        posx -= self.view_local_cameras[index].0;
-        posy -= self.view_local_cameras[index].1;
-        
-        // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
-        //blit_sub(&self.sheet.bytes, posx as i32 * 10, posy as i32 * 10, 10, 10, 0, 0, self.sheet.width, flags);
-        let offset: i8 = if self.tick > 30 {1} else {0};
-        let mut offset_x: i8 = 0;
-        let mut offset_y: i8 = 0;
-        let mut offset_x2: i8 = 0;
-        let mut offset_y2: i8 = 0;
+        let (posx, posy) = vec_from_grid(self.cursors[index]);
+        let posx = posx.saturating_sub(self.view_local_cameras[index].0) as i32;
+        let posy = posy.saturating_sub(self.view_local_cameras[index].1) as i32;
+        let offset: i32 = if self.tick > 30 { 1 } else { 0 };
+        let mut offset_x: i32 = 0;
+        let mut offset_y: i32 = 0;
+        let mut offset_x2: i32 = 0;
+        let mut offset_y2: i32 = 0;
 
         // this will need to be around a "selected element", i.e. a building. Rendering can be separated from logic, this means that cursor will do something idk
         match self.grid[self.cursors[index] as usize] {
-            CellState::House(_x, y) | CellState::House2(_x, y) => {
-                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
-                offset_y = if y > 1 { -10 } else {0};
-                offset_x2 = if y % 2 == 0 {10} else {0};
-                offset_y2 = if y > 1 { 0 } else {10};
+            CellState::House(_, y)
+            | CellState::House2(_, y)
+            | CellState::BigRock(y)
+            | CellState::Tree(y)
+            | CellState::Stand(y) => {
+                offset_x = if (y + 1) % 2 == 0 { -10 } else { 0 };
+                offset_y = if y > 1 { -10 } else { 0 };
+                offset_x2 = if y % 2 == 0 { 10 } else { 0 };
+                offset_y2 = if y > 1 { 0 } else { 10 };
             }
 
-            CellState::Church(_x, y) => { 
-                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
-                offset_y = if y > 3 { -20 } else if y > 1 { -10 } else {0};
-                offset_x2 = if y % 2 == 0 {10} else {0};
-                offset_y2 = if y > 3 { 0 } else if y > 1 { 10 } else {20};
-            }
-
-            CellState::BigRock(y) | CellState::Tree(y) | CellState::Stand(y) => {
-                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
-                offset_y = if y > 1 { -10 } else {0};
-                offset_x2 = if y % 2 == 0 {10} else {0};
-                offset_y2 = if y > 1 { 0 } else {10};
+            CellState::Church(_x, y) => {
+                offset_x = if (y + 1) % 2 == 0 { -10 } else { 0 };
+                offset_y = if y > 3 {
+                    -20
+                } else if y > 1 {
+                    -10
+                } else {
+                    0
+                };
+                offset_x2 = if y % 2 == 0 { 10 } else { 0 };
+                offset_y2 = if y > 3 {
+                    0
+                } else if y > 1 {
+                    10
+                } else {
+                    20
+                };
             }
 
             CellState::Lamppost(y) => {
-                offset_y = if y == 1 { -10 } else {0};
-                offset_y2 = if y == 1 { 0 } else {10};
+                offset_y = if y == 1 { -10 } else { 0 };
+                offset_y2 = if y == 1 { 0 } else { 10 };
             }
 
             CellState::Farm(y) | CellState::Hay(y) => {
-                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
-                offset_x2 = if y % 2 == 0 {10} else {0};
+                offset_x = if (y + 1) % 2 == 0 { -10 } else { 0 };
+                offset_x2 = if y % 2 == 0 { 10 } else { 0 };
             }
-            
+
             _ => {}
         }
 
-        self.draw_sprite(posx as i32 * 10 - offset + offset_x, posy as i32 * 10 - offset + offset_y, 3, 3, 51, 120);
-        self.draw_sprite(posx as i32 * 10 + 7 + offset + offset_x2, posy as i32 * 10 + 7 + offset + offset_y2, 3, 3, 54, 120);
+        self.draw_sprite(
+            posx * 10 - offset + offset_x,
+            posy * 10 - offset + offset_y,
+            3,
+            3,
+            51,
+            120,
+        );
+        self.draw_sprite(
+            posx * 10 + 7 + offset + offset_x2,
+            posy * 10 + 7 + offset + offset_y2,
+            3,
+            3,
+            54,
+            120,
+        );
     }
 
     // Draw a debug palette at the bottom right corner
@@ -691,9 +790,6 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         rect(150, 150, 10, 10);
     }
-
-
-    
 }
 
 // Convert local coords to index
@@ -713,19 +809,23 @@ fn apply_direction(index: u16, dir: Direction) -> Option<u16> {
     let (x, y) = vec_from_grid(index);
     let (mut x, mut y) = (x as i8, y as i8);
 
-    match dir {
-        Direction::N => y -= 1,
-        Direction::E => x += 1,
-        Direction::S => y += 1,
-        Direction::W => x -= 1,
-        Direction::NE => {y -= 1; x += 1},
-        Direction::SE => {y += 1; x += 1},
-        Direction::NW => {y -= 1; x -= 1},
-        Direction::SW => {y += 1; x -= 1},
+    let offset = match dir {
+        Direction::N => (0, -1),
+        Direction::E => (1, 0),
+        Direction::S => (0, 1),
+        Direction::W => (-1, 0),
+        Direction::NE => (1, -1),
+        Direction::SE => (1, 1),
+        Direction::NW => (-1, -1),
+        Direction::SW => (-1, 1),
     };
 
+    x += offset.0;
+    y += offset.1;
+
     let (x, y) = (x as u8, y as u8);
-    ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x)).then(|| grid_from_vec(x as u8, y as u8))
+    ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x))
+        .then(|| grid_from_vec(x as u8, y as u8))
 }
 
 fn random_direction() -> Direction {

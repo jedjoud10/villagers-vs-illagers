@@ -1,12 +1,15 @@
-use std::{path::{Path, PathBuf}, fs, io};
-use bitvec::{prelude::*, field::BitField};
+use bitvec::{field::BitField, prelude::*};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 // Limitations:
 // max sprite sheet size: (256 in either direction)
 // max number of colors: 4 (for wasm4)
 // ASSUMES THE FILE HAS BEEN EXPORTED FROM ASEPRITE IN INDEXED MODE
 // does not work otherwise :3 (idk might or might not I didn't test)
-// 
+//
 //
 // To force textures to be repacked just save this file
 // Otherwise rebuild and it should repack it automatically
@@ -17,7 +20,10 @@ fn main() {
     // Loop over all sprites and pack them
     let dir = std::fs::read_dir("./assets").unwrap();
     for entry in dir.filter_map(|x| x.ok()) {
-        println!("cargo:warning=Packing sprite: {}", entry.file_name().to_str().unwrap_or_default());
+        println!(
+            "cargo:warning=Packing sprite: {}",
+            entry.file_name().to_str().unwrap_or_default()
+        );
         if let Err(err) = process(&entry.path()) {
             println!("cargo:warning={:?}", err);
         }
@@ -32,13 +38,17 @@ fn process(path: &Path) -> Result<(), eyre::Error> {
     let height = header.height;
     let width = header.width;
     let mut info = decoder.read_info().unwrap();
-    
+
     let size = info.output_buffer_size();
     let mut bytes = vec![0u8; size];
     info.next_frame(&mut bytes)?;
 
     // subtract 1 since aseprite always add a transparent color at index 0
-    let palette = &info.info().palette.as_ref().ok_or(eyre::anyhow!("Not indexed!"))?;
+    let palette = &info
+        .info()
+        .palette
+        .as_ref()
+        .ok_or(eyre::anyhow!("Not indexed!"))?;
     let palette_count = (palette.len() / 3) - 1;
 
     println!("cargo:warning=Widht: {}, Height: {}", width, height);
@@ -74,11 +84,11 @@ fn process(path: &Path) -> Result<(), eyre::Error> {
     for (i, byte) in bytes.into_iter().enumerate() {
         match bits_per_pixel {
             1 => storage.set(i, byte.saturating_sub(1) == 1),
-            2 => storage[i*2 ..= i*2+1].store(byte.saturating_sub(1)),
+            2 => storage[i * 2..=i * 2 + 1].store(byte.saturating_sub(1)),
             _ => unreachable!(),
         }
-    };
-    
+    }
+
     // Create file and save it
     let mut output_path: PathBuf = PathBuf::new();
     output_path.push("./packed");
@@ -86,7 +96,10 @@ fn process(path: &Path) -> Result<(), eyre::Error> {
     output_path.set_extension("pak");
     let mut output_file = fs::File::create(&output_path)?;
     let bytes = io::copy(&mut output_vec, &mut output_file)?;
-    println!("cargo:warning=Saved {bytes} bytes to file {:?}", &output_path);
+    println!(
+        "cargo:warning=Saved {bytes} bytes to file {:?}",
+        &output_path
+    );
 
     return Ok(());
 }

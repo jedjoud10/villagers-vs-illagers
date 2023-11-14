@@ -8,19 +8,16 @@ pub struct Sprite {
 
 #[macro_export]
 macro_rules! sprite {
-    ($file:expr $(,)?) => {
-        {
-            let data: &'static [u8] = include_bytes!($file);
-            let width = data[0] as u32;
-            let height = data[1] as u32;
-            let flags = data[2] as u32;  
-            Sprite {
-                bytes: &data[3..],
-                width,
-                height,
-                flags,
-            }
+    ($file:expr $(,)?) => {{
+        let data: &'static [u8] = include_bytes!($file);
+        let width = data[0] as u32;
+        let height = data[1] as u32;
+        let flags = data[2] as u32;
+        Sprite {
+            bytes: &data[3..],
+            width,
+            height,
+            flags,
         }
-        
-    };
+    }};
 }
