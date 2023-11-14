@@ -2,7 +2,7 @@ mod alloc;
 mod sprites;
 mod terrain;
 mod wasm4;
-use std::{mem::transmute, ops::BitXor};
+use std::mem::transmute;
 pub use sprites::*;
 use wasm4::*;
 
@@ -203,20 +203,26 @@ impl Game {
     }
 
     unsafe fn run(&mut self) {
-        if self.tick == 0 {
-            self.update();
+        if (*NETPLAY >> 2) == 0 {
+            text("Mohsin cannot ", 0, 0);
+            text("play alone....", 0, 10);
+        } else {
+            self.current_player = *NETPLAY & 0b11;
+
+            if self.tick == 0 {
+                self.update();
+            }
+    
+            self.fetch_input();
+            self.draw_background();
+            self.draw_sprites();
+            self.draw_footer();
+            self.draw_cursors();
+            //self.debug_palette();
+
+            self.tick += 1;
+            self.tick %= 60;
         }
-
-        self.fetch_input();
-        self.draw_background();
-        self.draw_sprites();
-        self.draw_footer();
-        self.draw_cursors();
-        //self.debug_palette();
-        
-
-        self.tick += 1;
-        self.tick %= 60;
     }
 
     // Fetch gamepad input. Also works in multiplayer. Only supports 2 players
@@ -580,24 +586,22 @@ impl Game {
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
         *DRAW_COLORS = 0b0100_0000_0000_0001;
-        for (index, selector_position) in self.cursors.iter().enumerate() {
-            let (mut posx, mut posy) = vec_from_grid(*selector_position);
-            posx -= self.view_local_cameras[index].0;
-            posy -= self.view_local_cameras[index].1;
+        let index = self.current_player as usize;
+        let (mut posx, mut posy) = vec_from_grid(self.cursors[index]);
+        posx -= self.view_local_cameras[index].0;
+        posy -= self.view_local_cameras[index].1;
 
-            const COLORS: [u8; 2] = [0b1000000, 0b0010000];
-            *DRAW_COLORS = COLORS[index] as u16;
+        const COLORS: [u8; 2] = [0b1000000, 0b0010000];
+        *DRAW_COLORS = COLORS[index] as u16;
 
-            let flags = if index == 0 {
-              BLIT_FLIP_X 
-            } else {
-                0
-            } | self.sheet.flags;
-            
-            // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
-            blit_sub(&self.sheet.bytes, posx as i32 * 10, posy as i32 * 10, 10, 10, 0, 0, self.sheet.width, flags);
+        let flags = if index == 0 {
+            BLIT_FLIP_X 
+        } else {
+            0
+        } | self.sheet.flags;
         
-        }
+        // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
+        blit_sub(&self.sheet.bytes, posx as i32 * 10, posy as i32 * 10, 10, 10, 0, 0, self.sheet.width, flags);
     }
 
     // Draw a debug palette at the bottom right corner
@@ -611,6 +615,8 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         rect(150, 150, 10, 10);
     }
+
+    
 }
 
 // Convert local coords to index
