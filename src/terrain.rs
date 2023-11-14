@@ -1,6 +1,4 @@
-use crate::{
-    grid_from_vec, vec_from_grid, BuildingState, CellState, AREA, GRID_SIZE_X, GRID_SIZE_Y,
-};
+use crate::{grid_from_vec, BuildingState, CellState, AREA, GRID_SIZE_X, GRID_SIZE_Y};
 
 // Terrain feature that we could generate
 struct Feature {
@@ -69,7 +67,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             range_to_spawn: [(10, 10), (20, 20)],
         },
         Feature {
-            closure: |i| CellState::BigRock(i),
+            closure: CellState::BigRock,
             probabibility: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) > 15
@@ -79,7 +77,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             range_to_spawn: [(0, 0), (30, 30)],
         },
         Feature {
-            closure: |i| CellState::Tree(i),
+            closure: CellState::Tree,
             probabibility: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) > 15
@@ -109,7 +107,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             range_to_spawn: [(5, 5), (25, 25)],
         },
         Feature {
-            closure: |i| CellState::Hay(i),
+            closure: CellState::Hay,
             probabibility: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) < 15
@@ -119,7 +117,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             range_to_spawn: [(10, 10), (20, 20)],
         },
         Feature {
-            closure: |i| CellState::Farm(i),
+            closure: CellState::Farm,
             probabibility: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) < 15
@@ -129,7 +127,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             range_to_spawn: [(8, 8), (22, 22)],
         },
         Feature {
-            closure: |i| CellState::Lamppost(i),
+            closure: CellState::Lamppost,
             probabibility: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) < 15
@@ -197,10 +195,10 @@ fn spawn_building(
     }
 
     // Calculates indices for grid cells that will be modified
-    let indices = (0..(width * height)).into_iter().map(|i| {
+    let indices = (0..(width * height)).map(|i| {
         // Convert "i" variant number of building into local space (on a building scale)
         let (ax, ay) = {
-            let index = i as u8;
+            let index = i;
             let x = index % width;
             let y = index / width;
             (x, y)
@@ -208,7 +206,7 @@ fn spawn_building(
 
         // Convert it back to grid space (on the map scale though)
         let a = crate::grid_from_vec(ax, ay);
-        index as u16 + a
+        index + a
     });
 
     // Can't use Vec. Womp womp
@@ -228,7 +226,7 @@ fn spawn_building(
     }
 
     // Set the proper cells
-    for (variant, &i) in cache[..count].into_iter().enumerate() {
+    for (variant, &i) in cache[..count].iter().enumerate() {
         grid[i as usize] = function(variant as u8);
     }
 

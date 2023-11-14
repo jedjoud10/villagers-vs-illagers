@@ -101,5 +101,5 @@ fn process(path: &Path) -> Result<(), eyre::Error> {
         &output_path
     );
 
-    return Ok(());
+    Ok(())
 }

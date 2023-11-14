@@ -161,7 +161,7 @@ struct Game {
 
     sheet: Sprite,
     current_selected_class: [u8; 2],
-    grid: Box<[CellState; AREA as usize]>,
+    grid: Box<[CellState; AREA]>,
 }
 
 impl Game {
@@ -419,9 +419,9 @@ impl Game {
             if matches!(grid[index_2], CellState::Empty) {
                 grid[index_2] = grid[index as usize];
                 grid[index as usize] = CellState::Empty;
-                return true;
+                true
             } else {
-                return false;
+                false
             }
         }
 
@@ -495,11 +495,11 @@ impl Game {
         for x in 0..3 {
             let offset: u8 = if class == x as u8 && !button { 0 } else { 1 };
             self.draw_sprite(
-                4 + 19 * x as i32 + offset as i32,
+                4 + 19 * x + offset as i32,
                 124 + offset as i32,
                 17 - offset as u32,
                 27 - offset as u32,
-                0 + 17 * x as u32,
+                17 * x as u32,
                 120 + self.current_player as u32 * 27,
             )
         }
@@ -531,7 +531,7 @@ impl Game {
     // Draw a general sprite from the main sprite sheet
     fn draw_sprite(&self, x: i32, y: i32, width: u32, height: u32, src_x: u32, src_y: u32) {
         blit_sub(
-            &self.sheet.bytes,
+            self.sheet.bytes,
             x,
             y,
             width,
@@ -592,7 +592,7 @@ impl Game {
 
         if x == 0 {
             blit_sub(
-                &self.sheet.bytes,
+                self.sheet.bytes,
                 dst.0,
                 dst.1,
                 10,
@@ -824,8 +824,7 @@ fn apply_direction(index: u16, dir: Direction) -> Option<u16> {
     y += offset.1;
 
     let (x, y) = (x as u8, y as u8);
-    ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x))
-        .then(|| grid_from_vec(x as u8, y as u8))
+    ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x)).then(|| grid_from_vec(x, y))
 }
 
 fn random_direction() -> Direction {
