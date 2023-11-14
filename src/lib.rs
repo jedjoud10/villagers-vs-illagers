@@ -157,7 +157,8 @@ struct Game {
     cursor_timer: [u8; 2],
     view_local_cameras: [(u8, u8); 2],
     current_player: u8,
-    
+    button_held: [bool; 2],
+
     sheet: Sprite,
     current_selected_class: [u8; 2],
     grid: Box<[CellState; AREA as usize]>,
@@ -186,10 +187,11 @@ impl Game {
         
         Self {
             seed,
-            emeralds: [10, 10],
+            emeralds: [200, 100],
             tick: 0,
             cursors: [0, 0],
             current_player: 0, 
+            button_held: [false, false],
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             cursor_timer: [0, 0],
@@ -231,17 +233,12 @@ impl Game {
     // Also moves the appropriate selectors (and current player view if needed)
     unsafe fn fetch_input(&mut self) {
         // Moves the cursor, also moving the view local camera when it goes out of bounds
-        fn move_cursor(dir: Direction, cursor: &mut u16, camera: &mut (u8, u8)) {
+        fn move_cursor(step_x: i8, step_y: i8, cursor: &mut u16, camera: &mut (u8, u8)) {
             let mut x = (*cursor % GRID_SIZE_X as u16) as i8;
             let mut y = (*cursor / GRID_SIZE_X as u16) as i8;
 
-            match dir {
-                Direction::N => y -= 1,
-                Direction::S => y += 1,
-                Direction::W => x -= 1,
-                Direction::E => x += 1,
-                _ => {}
-            }
+            x += step_x;
+            y += step_y;
 
             let x = x.clamp(0, GRID_SIZE_X as i8-1) as u8;
             let y = y.clamp(0, GRID_SIZE_Y as i8-1) as u8;
@@ -273,16 +270,49 @@ impl Game {
             let grid_pos: &mut u16 = &mut self.cursors[index];
             let camera = &mut self.view_local_cameras[index];
             let tick: &mut u8 = &mut self.cursor_timer[index];
-            let tick_check: bool = *tick % 5 == 0;
+            let tick_check: bool = *tick % 7 == 0;
             *tick = tick.wrapping_add(1);
+
+            let mut step_left: i8 = -1;
+            let mut step_right: i8 = 1;
+            let mut step_down: i8 = 1;
+            let mut step_up: i8 = -1;
+
+            match &self.grid[*grid_pos as usize] {
+                CellState::House(_x, y) | CellState::House2(_x, y) => {
+                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
+                    if y > &1 {step_up *= 2} else {step_down *= 2};
+                }
+    
+                CellState::Church(_x, y) => { 
+                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
+                    if y > &3 {step_up *= 3} else {step_down *= 3};
+                }
+    
+                CellState::BigRock(y) | CellState::Tree(y) | CellState::Stand(y) => {
+                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
+                    if y > &1 {step_up *= 2} else {step_down *= 2};
+                }
+    
+                CellState::Lamppost(y) => {
+                    if y > &1 {step_up *= 2} else {step_down *= 2};
+                }
+    
+                CellState::Farm(y) | CellState::Hay(y) => {
+                    if y % 2 == 0 {step_right *= 2} else {step_left *= 2};
+                }
+                
+                _ => {}
+            }
+
             if current & BUTTON_UP != 0 {
-                if tick_check { move_cursor(Direction::N, grid_pos, camera)};
+                if tick_check { move_cursor(0, step_up, grid_pos, camera)};
             } else if current & BUTTON_DOWN != 0 {
-                if tick_check { move_cursor(Direction::S, grid_pos, camera)};
+                if tick_check { move_cursor(0, step_down, grid_pos, camera)};
             } else if current & BUTTON_LEFT != 0 {
-                if tick_check { move_cursor(Direction::W, grid_pos, camera)};
+                if tick_check { move_cursor(step_left, 0, grid_pos, camera)};
             } else if current & BUTTON_RIGHT != 0 {
-                if tick_check { move_cursor(Direction::E, grid_pos, camera)};
+                if tick_check { move_cursor(step_right, 0, grid_pos, camera)};
             } else {
                 *tick = 0;
             }
@@ -338,6 +368,8 @@ impl Game {
                     }
                 }
             }
+
+            self.button_held[index] = current & BUTTON_1 != 0;
         }
     }
 
@@ -400,10 +432,11 @@ impl Game {
         text(buffer.format(class), 71, 144);
 
         *DRAW_COLORS = 0b0100_0011_0010_0001;
+        let button = self.button_held[self.current_player as usize];
 
         // Draw class portraits - width 17, height 27
         for x in 0..3 {
-            let offset: i32 = if class == x as u8 {1} else {0};
+            let offset: u8 = if class == x as u8 && !button {0} else {1};
             self.draw_sprite(
                 4 + 19 * x + offset,
                 124 + offset,
@@ -416,7 +449,7 @@ impl Game {
 
         // Draw action buttons - width 9, height 9
         for x in 0..3 {
-            let offset: i32 = if class == x as u8 + 3 {1} else {0};
+            let offset: i32 = if class == x as u8 + 3 && !button {0} else {1};
             self.draw_sprite(
                 61 + 11 * x + offset,
                 124 + offset,
@@ -434,15 +467,15 @@ impl Game {
         // Draw log? todo
     }
 
-    fn draw_sprite(&self, x: i32, y: i32, width: u32, height: u32, src_x: u32, src_y: u32) {
+    fn draw_sprite(&self, x: u8, y: u8, width: u8, height: u8, src_x: u8, src_y: u8) {
         blit_sub(
             &self.sheet.bytes,
-            x,
-            y,
-            width,
-            height,
-            src_x,
-            src_y,
+            x as i32,
+            y as i32,
+            width as u32,
+            height as u32,
+            src_x as u32,
+            src_y as u32,
             self.sheet.width,
             self.sheet.flags,
         );
@@ -593,23 +626,58 @@ impl Game {
 
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
-        *DRAW_COLORS = 0b0100_0000_0000_0001;
+        *DRAW_COLORS = 0b0000_0000_0001_0000;
         let index = self.current_player as usize;
         let (mut posx, mut posy) = vec_from_grid(self.cursors[index]);
         posx -= self.view_local_cameras[index].0;
         posy -= self.view_local_cameras[index].1;
-
-        const COLORS: [u8; 2] = [0b1000000, 0b0010000];
-        *DRAW_COLORS = COLORS[index] as u16;
-
-        let flags = if index == 0 {
-            BLIT_FLIP_X 
-        } else {
-            0
-        } | self.sheet.flags;
         
         // cursor is off center by 3 pixels to satisfy restriction that width must be divible by 8
-        blit_sub(&self.sheet.bytes, posx as i32 * 10, posy as i32 * 10, 10, 10, 0, 0, self.sheet.width, flags);
+        //blit_sub(&self.sheet.bytes, posx as i32 * 10, posy as i32 * 10, 10, 10, 0, 0, self.sheet.width, flags);
+        let offset: i8 = if self.tick > 30 {1} else {0};
+        let mut offset_x: i8 = 0;
+        let mut offset_y: i8 = 0;
+        let mut offset_x2: i8 = 0;
+        let mut offset_y2: i8 = 0;
+
+        // this will need to be around a "selected element", i.e. a building. Rendering can be separated from logic, this means that cursor will do something idk
+        match self.grid[self.cursors[index] as usize] {
+            CellState::House(_x, y) | CellState::House2(_x, y) => {
+                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
+                offset_y = if y > 1 { -10 } else {0};
+                offset_x2 = if y % 2 == 0 {10} else {0};
+                offset_y2 = if y > 1 { 0 } else {10};
+            }
+
+            CellState::Church(_x, y) => { 
+                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
+                offset_y = if y > 3 { -20 } else if y > 1 { -10 } else {0};
+                offset_x2 = if y % 2 == 0 {10} else {0};
+                offset_y2 = if y > 3 { 0 } else if y > 1 { 10 } else {20};
+            }
+
+            CellState::BigRock(y) | CellState::Tree(y) | CellState::Stand(y) => {
+                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
+                offset_y = if y > 1 { -10 } else {0};
+                offset_x2 = if y % 2 == 0 {10} else {0};
+                offset_y2 = if y > 1 { 0 } else {10};
+            }
+
+            CellState::Lamppost(y) => {
+                offset_y = if y == 1 { -10 } else {0};
+                offset_y2 = if y == 1 { 0 } else {10};
+            }
+
+            CellState::Farm(y) | CellState::Hay(y) => {
+                offset_x = if (y + 1) % 2 == 0 {-10} else {0};
+                offset_x2 = if y % 2 == 0 {10} else {0};
+            }
+            
+            _ => {}
+        }
+
+        self.draw_sprite(posx as i32 * 10 - offset + offset_x, posy as i32 * 10 - offset + offset_y, 3, 3, 51, 120);
+        self.draw_sprite(posx as i32 * 10 + 7 + offset + offset_x2, posy as i32 * 10 + 7 + offset + offset_y2, 3, 3, 54, 120);
     }
 
     // Draw a debug palette at the bottom right corner
@@ -623,6 +691,7 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         rect(150, 150, 10, 10);
     }
+
 
     
 }
