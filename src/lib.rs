@@ -158,6 +158,7 @@ struct Game {
     view_local_cameras: [(u8, u8); 2],
     current_player: u8,
     button_held: [bool; 2],
+    action_possible: [bool; 2],
 
     sheet: Sprite,
     current_selected_class: [u8; 2],
@@ -192,6 +193,7 @@ impl Game {
             cursors: [0, 0],
             current_player: 0,
             button_held: [false, false],
+            action_possible: [false, false],
             new_gamepad: [0; 2],
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             cursor_timer: [0, 0],
@@ -233,25 +235,44 @@ impl Game {
     // Also moves the appropriate selectors (and current player view if needed)
     unsafe fn fetch_input(&mut self) {
         // Moves the cursor, also moving the view local camera when it goes out of bounds
-        fn move_cursor(step_x: i8, step_y: i8, cursor: &mut u16, camera: &mut (u8, u8)) {
+        fn move_cursor(mut step_x: i8, mut step_y: i8, cursor: &mut u16, camera: &mut (u8, u8)) {
             let mut x = (*cursor % GRID_SIZE_X as u16) as i8;
             let mut y = (*cursor / GRID_SIZE_X as u16) as i8;
 
+            // clamp but figure out what difference WOULD work
+            if x + step_x < 0 {
+                step_x -= x + step_x;
+            } else if x + step_x > GRID_SIZE_X as i8 - 1 {
+                step_x += x + step_x - GRID_SIZE_X as i8 - 1
+            }
+
             x += step_x;
+
+            if y + step_y < 0 {
+                step_y -= y + step_y;
+            } else if y + step_y > GRID_SIZE_Y as i8 - 1 {
+                step_y += y + step_y - GRID_SIZE_Y as i8 - 1
+            }
+            
             y += step_y;
 
-            let x = x.clamp(0, GRID_SIZE_X as i8 - 1) as u8;
-            let y = y.clamp(0, GRID_SIZE_Y as i8 - 1) as u8;
+            let step_x: u8 = step_x.abs() as u8;
+            let step_y: u8 = step_y.abs() as u8;
 
+            let x = x as u8;
+            let y = y as u8;
+
+            // What this code should do: is x greater than camera bounds? If so, move camera accordingly
             match x.checked_sub(camera.0) {
-                Some(x) if x >= GRID_LOCAL_SIZE_X => camera.0 += 1,
-                None => camera.0 -= 1,
+                // Is x greater than grid local size? move to there
+                Some(x) if x >= GRID_LOCAL_SIZE_X => camera.0 += step_x,
+                None => camera.0 -= step_x,
                 _ => {}
             }
 
             match y.checked_sub(camera.1) {
-                Some(y) if y >= GRID_LOCAL_SIZE_Y => camera.1 += 1,
-                None => camera.1 -= 1,
+                Some(y) if y >= GRID_LOCAL_SIZE_Y => camera.1 += step_y,
+                None => camera.1 -= step_y,
                 _ => {}
             }
 
@@ -300,6 +321,9 @@ impl Game {
                     };
                     if y > &3 {
                         step_up *= 3
+                    } else if y > &1 {
+                        step_up *= 2;
+                        step_down *= 2
                     } else {
                         step_down *= 3
                     };
@@ -319,7 +343,7 @@ impl Game {
                 }
 
                 CellState::Lamppost(y) => {
-                    if y > &1 {
+                    if y == &1 {
                         step_up *= 2
                     } else {
                         step_down *= 2
@@ -723,39 +747,28 @@ impl Game {
             | CellState::BigRock(y)
             | CellState::Tree(y)
             | CellState::Stand(y) => {
-                offset_x = if (y + 1) % 2 == 0 { -10 } else { 0 };
-                offset_y = if y > 1 { -10 } else { 0 };
-                offset_x2 = if y % 2 == 0 { 10 } else { 0 };
-                offset_y2 = if y > 1 { 0 } else { 10 };
+                if y % 2 == 0 { offset_x2 = 10 } else { offset_x = -10 }
+                if y > 1 { offset_y = -10 } else { offset_y2 = 10 }
             }
 
             CellState::Church(_x, y) => {
-                offset_x = if (y + 1) % 2 == 0 { -10 } else { 0 };
-                offset_y = if y > 3 {
-                    -20
+                if y % 2 == 0 { offset_x2 = 10 } else { offset_x = -10 }
+                if y > 3 {
+                    offset_y = -20
                 } else if y > 1 {
-                    -10
+                    offset_y = -10;
+                    offset_y2 = 10
                 } else {
-                    0
-                };
-                offset_x2 = if y % 2 == 0 { 10 } else { 0 };
-                offset_y2 = if y > 3 {
-                    0
-                } else if y > 1 {
-                    10
-                } else {
-                    20
-                };
+                    offset_y2 = 20
+                }
             }
 
             CellState::Lamppost(y) => {
-                offset_y = if y == 1 { -10 } else { 0 };
-                offset_y2 = if y == 1 { 0 } else { 10 };
+                if y == 1 { offset_y = -10 } else { offset_y2 = 10 }
             }
 
             CellState::Farm(y) | CellState::Hay(y) => {
-                offset_x = if (y + 1) % 2 == 0 { -10 } else { 0 };
-                offset_x2 = if y % 2 == 0 { 10 } else { 0 };
+                if y % 2 == 0 { offset_x2 = 10 } else { offset_x = -10 }
             }
 
             _ => {}
@@ -769,14 +782,17 @@ impl Game {
             51,
             120,
         );
-        self.draw_sprite(
-            posx * 10 + 7 + offset + offset_x2,
-            posy * 10 + 7 + offset + offset_y2,
-            3,
-            3,
-            54,
-            120,
-        );
+        let bottom_posy = posy * 10 + 7 + offset + offset_y2;
+        if bottom_posy <= 120 {
+            self.draw_sprite(
+                posx * 10 + 7 + offset + offset_x2,
+                bottom_posy,
+                3,
+                3,
+                54,
+                120,
+            );
+        }
     }
 
     // Draw a debug palette at the bottom right corner
