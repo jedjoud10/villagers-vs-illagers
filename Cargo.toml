@@ -19,10 +19,10 @@ eyre = "0.6.8"
 png = "0.17.5"
 
 [profile.release]
-#opt-level = "z"
-#lto = true
-#debug-assertions = false
-#strip = "debuginfo"
+opt-level = "z"
+lto = true
+debug-assertions = false
+strip = "debuginfo"
 
 [features]
 # use `--no-default-features` or comment out next line to disable allocator

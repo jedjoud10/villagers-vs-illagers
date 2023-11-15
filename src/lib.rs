@@ -176,7 +176,7 @@ impl Game {
             (&mut seed as *mut u64).cast::<u8>(),
             std::mem::size_of::<u64>() as u32,
         );
-        seed += 1;
+        //seed += 1;
 
         diskw(
             (&mut seed as *mut u64).cast::<u8>(),
@@ -235,46 +235,41 @@ impl Game {
     // Also moves the appropriate selectors (and current player view if needed)
     unsafe fn fetch_input(&mut self) {
         // Moves the cursor, also moving the view local camera when it goes out of bounds
-        fn move_cursor(mut step_x: i8, mut step_y: i8, cursor: &mut u16, camera: &mut (u8, u8)) {
+        fn move_cursor(step_x: i8, step_y: i8, cursor: &mut u16, camera: &mut (i8, i8)) {
             let mut x = (*cursor % GRID_SIZE_X as u16) as i8;
             let mut y = (*cursor / GRID_SIZE_X as u16) as i8;
 
-            // clamp but figure out what difference WOULD work
-            if x + step_x < 0 {
-                step_x -= x + step_x;
-            } else if x + step_x > GRID_SIZE_X as i8 - 1 {
-                step_x += x + step_x - GRID_SIZE_X as i8 - 1
-            }
-
-            x += step_x;
-
-            if y + step_y < 0 {
-                step_y -= y + step_y;
-            } else if y + step_y > GRID_SIZE_Y as i8 - 1 {
-                step_y += y + step_y - GRID_SIZE_Y as i8 - 1
-            }
-            
-            y += step_y;
-
-            let step_x: u8 = step_x.abs() as u8;
-            let step_y: u8 = step_y.abs() as u8;
-
+            // Works ig
+            x += (x + step_x).clamp(0, GRID_SIZE_X as i8 - 1) - x;
+            y += (y + step_y).clamp(0, GRID_SIZE_Y as i8 - 1) - y;
             let x = x as u8;
             let y = y as u8;
 
-            // What this code should do: is x greater than camera bounds? If so, move camera accordingly
-            match x.checked_sub(camera.0) {
-                // Is x greater than grid local size? move to there
-                Some(x) if x >= GRID_LOCAL_SIZE_X => camera.0 += step_x,
-                None => camera.0 -= step_x,
-                _ => {}
+
+            fn uncontained_clamp(coord: &mut i8, val: i8, max: u8) {                
+                // local view min and max
+                let min = *coord;
+                let max = *coord + (max - 1) as i8;
+                
+                // max if x > max
+                // min if x < min
+                // val otherwise (to make subtraction 0)
+                let diff = if val < min {
+                    min
+                } else if val > max {
+                    max
+                } else {
+                    val
+                };
+
+                // move camera coordinate by difference
+                *coord += val - diff;
             }
 
-            match y.checked_sub(camera.1) {
-                Some(y) if y >= GRID_LOCAL_SIZE_Y => camera.1 += step_y,
-                None => camera.1 -= step_y,
-                _ => {}
-            }
+            // Completely refactored camera movement code that will simply try to accodomate keeping the cursor in the 16x12 grid
+            // by taking cur diff to local edges
+            uncontained_clamp(&mut camera.0, x as i8, GRID_LOCAL_SIZE_X);
+            uncontained_clamp(&mut camera.1, y as i8, GRID_LOCAL_SIZE_Y);
 
             *cursor = y as u16 * GRID_SIZE_X as u16 + x as u16;
         }
@@ -361,23 +356,26 @@ impl Game {
                 _ => {}
             }
 
-            if current & BUTTON_UP != 0 {
-                if tick_check {
-                    move_cursor(0, step_up, grid_pos, camera)
+            if tick_check && current != 0 {
+                let (x, y) = if current & BUTTON_UP != 0 {
+                    (0, step_up)
+                } else if current & BUTTON_DOWN != 0 {
+                    (0, step_down)
+                } else if current & BUTTON_LEFT != 0 {
+                    (step_left, 0)
+                } else if current & BUTTON_RIGHT != 0 {
+                    (step_right, 0)
+                } else {
+                    (0, 0)
                 };
-            } else if current & BUTTON_DOWN != 0 {
-                if tick_check {
-                    move_cursor(0, step_down, grid_pos, camera)
-                };
-            } else if current & BUTTON_LEFT != 0 {
-                if tick_check {
-                    move_cursor(step_left, 0, grid_pos, camera)
-                };
-            } else if current & BUTTON_RIGHT != 0 {
-                if tick_check {
-                    move_cursor(step_right, 0, grid_pos, camera)
-                };
-            } else {
+
+                let mut camera_temp = (camera.0 as i8, camera.1 as i8);
+                move_cursor(x, y, grid_pos, &mut camera_temp);
+                camera.0 = camera_temp.0 as u8;
+                camera.1 = camera_temp.1 as u8;
+            }
+            
+            if current == 0 {
                 *tick = 0;
             }
 
