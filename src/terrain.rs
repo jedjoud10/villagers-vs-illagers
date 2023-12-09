@@ -3,7 +3,7 @@ use crate::{grid_from_vec, BuildingState, CellState, AREA, GRID_SIZE_X, GRID_SIZ
 // Terrain feature that we could generate
 struct Feature {
     closure: fn(u8) -> CellState,
-    probabibility: fn(u8, u8) -> bool,
+    probability: fn(u8, u8) -> bool,
     dimensions: (u8, u8),
     spawn_min_max: (u16, u16),
     range_to_spawn: [(u8, u8); 2],
@@ -19,14 +19,14 @@ fn dist(x: i8, y: i8, center_x: i8, center_y: i8) -> u8 {
 
 // Generate a grid with some interesting terrain
 pub fn generate() -> Box<[CellState; AREA]> {
-    let temp = vec![CellState::Empty; AREA].into_boxed_slice();
+    let temp: Box<[CellState]> = vec![CellState::Empty; AREA].into_boxed_slice();
     let mut grid: Box<[CellState; AREA]> =
         unsafe { Box::from_raw(Box::into_raw(temp) as *mut [CellState; AREA]) };
 
     let features = [
         Feature {
             closure: |i| CellState::House(BuildingState::Solid, i),
-            probabibility: |x, y| {
+            probability: |x, y| {
                 if x % 3 < 2 {
                     return false;
                 }
@@ -40,7 +40,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: |i| CellState::House2(BuildingState::Solid, i),
-            probabibility: |x, y| {
+            probability: |x, y| {
                 if x % 3 < 2 {
                     return false;
                 }
@@ -54,7 +54,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: |i| CellState::Church(BuildingState::Solid, i),
-            probabibility: |x, y| {
+            probability: |x, y| {
                 if x % 3 < 2 {
                     return false;
                 }
@@ -68,7 +68,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: CellState::BigRock,
-            probabibility: |x, y| {
+            probability: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) > 15
             },
@@ -78,7 +78,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: CellState::Tree,
-            probabibility: |x, y| {
+            probability: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) > 15
             },
@@ -88,7 +88,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: |_| CellState::Rock,
-            probabibility: |x, y| {
+            probability: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) > 15
             },
@@ -98,7 +98,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: |_| CellState::Bell,
-            probabibility: |x, y| {
+            probability: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) < 15
             },
@@ -108,7 +108,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: CellState::Hay,
-            probabibility: |x, y| {
+            probability: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) < 15
             },
@@ -118,7 +118,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: CellState::Farm,
-            probabibility: |x, y| {
+            probability: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) < 15
             },
@@ -128,7 +128,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
         },
         Feature {
             closure: CellState::Lamppost,
-            probabibility: |x, y| {
+            probability: |x, y| {
                 let (x, y) = (x as i8, y as i8);
                 dist(x, y, 15, 15) < 15
             },
@@ -140,7 +140,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
 
     for Feature {
         closure,
-        probabibility,
+        probability,
         range_to_spawn,
         dimensions,
         spawn_min_max,
@@ -152,7 +152,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             let x = fastrand::u8(range_to_spawn[0].0..(range_to_spawn[1].0));
             let y = fastrand::u8(range_to_spawn[0].1..(range_to_spawn[1].1));
 
-            if !probabibility(x, y) {
+            if !probability(x, y) {
                 continue;
             }
 
