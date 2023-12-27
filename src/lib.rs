@@ -3,7 +3,7 @@ mod sprites;
 mod terrain;
 mod wasm4;
 pub use sprites::*;
-use std::mem::transmute;
+use std::{mem::transmute, cell::Cell, ops::Range};
 use wasm4::*;
 
 static mut GAME: Option<Game> = None;
@@ -161,6 +161,7 @@ struct Game {
 
     sheet: Sprite,
     current_selected_class: [u8; 2],
+    goals: [u8; 4],
     grid: Box<[CellState; AREA]>,
 }
 
@@ -175,7 +176,7 @@ impl Game {
             (&mut seed as *mut u64).cast::<u8>(),
             std::mem::size_of::<u64>() as u32,
         );
-        //seed += 1;
+        seed += 1;
 
         diskw(
             (&mut seed as *mut u64).cast::<u8>(),
@@ -197,6 +198,7 @@ impl Game {
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             cursor_timer: [0, 0],
             current_selected_class: [0, 0],
+            goals: [u8::MAX; 4],
             sheet: sprite!("../packed/sprite.pak"),
             grid,
             view_local_cameras: [(0, 0), (0, 0)],
@@ -212,12 +214,14 @@ impl Game {
             *DRAW_COLORS = 0b0100_0011_0010_0001;
             self.draw_sprite(40, 8, 80, 10, 0, 180)
         } else {
-            self.current_player = *NETPLAY & 0b11;
+            //self.current_player = *NETPLAY & 0b11;
+            self.current_player = 0;
 
             if self.tick == 0 {
                 self.update();
             }
 
+            self.action_possible();
             self.fetch_input();
             self.draw_background();
             self.draw_sprites();
@@ -241,18 +245,42 @@ impl Game {
         // 5 on empty? true else false
         // 6 ? true
 
+        fn at_border(index: u16) -> bool {
+            let (x, y) = vec_from_grid(index);
+            if x == 0 || x == GRID_SIZE_X - 1 || y == 0 || y == GRID_SIZE_Y - 1 {
+                true
+            } else {
+                false
+            }
+        }
+        
         for index in 0..2 {
-            self.action_possible[index] = match self.grid[self.cursors[index] as usize] {
-                CellState::Empty => {
-                    if index == 0 {
-                        if self.current_selected_class[index].
+            let grid_pos = &self.grid[self.cursors[index] as usize];
+            self.action_possible[index] = match self.current_selected_class[index] {
+                0..=2 => {
+                    if index == 0 && matches!(*grid_pos, CellState::House(_, _) | CellState::Church(_, _) | CellState::House2(_, _)) {
+                        self.emeralds[0] >= self.current_selected_class[0] + 1
+                    } else if index == 1 && matches!(*grid_pos, CellState::Empty) && at_border(self.cursors[1]) {
+                        self.emeralds[1] >= self.current_selected_class[1] + 1
                     } else {
-                        
+                        false
                     }
                 }
 
-                _ => true
-            }
+                3 | 5 => {
+                    true
+                }
+
+                4 => {
+                    if matches!(*grid_pos, CellState::Empty) {
+                        true
+                    } else {
+                        false
+                    }
+                }
+
+                _ => unreachable!()
+            };
         }
     }
 
@@ -429,7 +457,6 @@ impl Game {
                         // logic that handles setting new classes
                         // this makes things so much easier lol nice
                         let cell: Option<&mut CellState> = if index == 1 && matches!(self.grid[*grid_pos as usize], CellState::Empty) { 
-                            *points = new_points;
                             Some(&mut self.grid[*grid_pos as usize])
                         } else { // Assuming the logic has already figured out that this is a house
                             // get a cell around the house...
@@ -444,108 +471,93 @@ impl Game {
                                 - random int in the range of the array
                             */
         
+                            let result: Option<&mut CellState>;
 
+                            let y: i16 = GRID_SIZE_X as i16;
+
+                            let positions: Vec<_> = match self.grid[*grid_pos as usize] {
+                                CellState::Church(_i, j) => {
+                                    let j = j as i16;
+                                    let offset_x: i16 = j % 2;
+                                    let offset_y: i16 = j / 2 * y; // done using j
+                    
+                                    [
+                                        -offset_x - y - offset_y, // 1 top
+                                        -offset_x + 1 - y - offset_y, // 2 top
+                                        -offset_x - 1 - offset_y, // 3
+                                        -offset_x + 2 - offset_y, // 4
+                                        -offset_x - 1 + y - offset_y, // 5
+                                        -offset_x + 2 + y - offset_y, // 6
+                                        -offset_x - 1 + (y * 2) - offset_y, // 7
+                                        -offset_x + 2 + (y * 2) - offset_y, // 8
+                                        -offset_x + (y * 3) - offset_y, // 9
+                                        -offset_x + 1 + (y * 3) - offset_y, // 10
+                                    ].to_vec()
+                                }
+
+                                CellState::House(_i, j) | CellState::House2(_i, j) => {
+                                    let j = j as i16;
+                                    let y = GRID_SIZE_X as i16;
+                                    let offset_x: i16 = j % 2;
+                                    let offset_y: i16 = j / 2 * y; // done using j
+                                    [
+                                        -offset_x - y - offset_y, // 1 top
+                                        -offset_x + 1 - y - offset_y, // 2 top
+                                        -offset_x - 1 - offset_y, // 3
+                                        -offset_x + 2 - offset_y, // 4
+                                        -offset_x - 1 + y - offset_y, // 5
+                                        -offset_x + 2 + y - offset_y, // 6
+                                        -offset_x + (y * 2) - offset_y, // 7
+                                        -offset_x + 1 + (y * 2) - offset_y, // 8
+                                    ].to_vec()
+                                }
+
+                                _ => {[].to_vec()}
+                            }.into_iter().filter(|position: &i16| matches!(self.grid[(*grid_pos as i16 + *position as i16) as usize], CellState::Empty)).collect();
+
+                            result = if positions.len() == 0 {
+                                None
+                            } else {
+                                Some(&mut self.grid[(*grid_pos as i16 + positions[fastrand::usize(0..positions.len())]) as usize])
+                            };
                             
-                            Some(&mut self.grid[{
-                                let mut upper_range: usize;
-                                let y: i16 = GRID_SIZE_X as i16;
-
-                                match self.grid[*grid_pos as usize] {
-                                    CellState::Church(_i, j) => {
-                                        upper_range = 8;
-                                        let j = j as i16;
-                                        let offset_x: i16 = j % 2;
-                                        let offset_y: i16 = j / 2 * y; // done using j
-                                        
-                                        let positions:[i16; 10] = [
-                                            -offset_x - y - offset_y, // 1 top
-                                            -offset_x + 1 - y - offset_y, // 2 top
-                                            -offset_x - 1 - offset_y, // 3
-                                            -offset_x + 2 - offset_y, // 4
-                                            -offset_x - 1 + y - offset_y, // 5
-                                            -offset_x + 2 + y - offset_y, // 6
-                                            -offset_x + 1 + (y * 2) - offset_y, // 7
-                                            -offset_x + 2 + (y * 2) - offset_y, // 8
-                                            -offset_x + (y * 3) - offset_y, // 9
-                                            -offset_x + 1 + (y * 3) - offset_y, // 10
-                                        ];
-
-                                        for position in positions {
-                                            if !matches!(self.grid[position as usize], CellState::Empty) {
-                                                upper_range -= 1;
-                                            }
-                                        }
-
-                                        if upper_range <= 0 {
-                                            return None;
-                                        }
-                                    }
-
-                                    CellState::House(_i, j) | CellState::House2(_i, j) => {
-                                        upper_range = 8;
-                                        let j = j as i16;
-                                        let y = GRID_SIZE_X as i16;
-                                        let offset_x: i16 = j % 2;
-                                        let offset_y: i16 = j / 2 * y; // done using j
-                                        let positions:[i16; 10] = [
-                                            -offset_x - y - offset_y, // 1 top
-                                            -offset_x + 1 - y - offset_y, // 2 top
-                                            -offset_x - 1 - offset_y, // 3
-                                            -offset_x + 2 - offset_y, // 4
-                                            -offset_x - 1 + y - offset_y, // 5
-                                            -offset_x + 2 + y - offset_y, // 6
-                                            -offset_x + 1 + (y * 2) - offset_y, // 7
-                                            -offset_x + 2 + (y * 2) - offset_y, // 8
-                                            -offset_x + (y * 3) - offset_y, // 9
-                                            -offset_x + 1 + (y * 3) - offset_y, // 10
-                                        ];
-
-                                        for position in positions {
-                                            if !matches!(self.grid[position as usize], CellState::Empty) {
-                                                upper_range -= 1;
-                                            }
-                                        }
-
-                                        if upper_range <= 0 {
-                                            return None;
-                                        }
-                                    }
-
-                                    _ => unreachable!()
-                                }[fastrand::usize(0..upper_range)]
-                            } + *grid_pos as usize])
+                            result
                         };
 
                         // "index" is play index (where 0 is villager and 1 is illager)
                         // "selected" is the selected class index (0..3)
-                        *cell = match (index, selected) {
-                            // villager clan classes
-                            (0, 0) => CellState::VillagerClan(VillagerClan::Villager),
-                            (0, 1) => CellState::VillagerClan(VillagerClan::Farmer),
-                            (0, 2) => CellState::VillagerClan(VillagerClan::Smith(0)),
+                        if let Some(cell_2) = cell { 
+                            *points = new_points;
+                            *cell_2 = match (index, selected) {
+                                // villager clan classes
+                                (0, 0) => CellState::VillagerClan(VillagerClan::Villager),
+                                (0, 1) => CellState::VillagerClan(VillagerClan::Farmer),
+                                (0, 2) => CellState::VillagerClan(VillagerClan::Smith(0)),
 
-                            // illager clan classes
-                            (1, 0) => {
-                                CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle)
-                            }
-                            (1, 1) => {
-                                CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
-                            }
-                            (1, 2) => {
-                                CellState::IllagerClan(IllagerClan::Evoker(0), IllagerState::Idle)
-                            }
+                                // illager clan classes
+                                (1, 0) => {
+                                    CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle)
+                                }
+                                (1, 1) => {
+                                    CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
+                                }
+                                (1, 2) => {
+                                    CellState::IllagerClan(IllagerClan::Evoker(0), IllagerState::Idle)
+                                }
 
-                            _ => CellState::Empty,
-                        };
+                                _ => CellState::Empty,
+                            };
+                        }
                     }
-                }
-            } else {
+                } else {
 
+                }
             }
 
             self.button_held[index] = current & BUTTON_1 != 0;
         }
     }
+
 
     // Iterate on all pieces
     fn update(&mut self) {
@@ -564,32 +576,25 @@ impl Game {
         }
 
         fn pathfind(index: u16, index_objective: u16, grid: &mut [CellState]) -> u16 {
-            fn get_neighbours(index: u16) -> Vec<u16> {
-                let i: Vec<u16>;
-                i = Vec::new();
-                return i;
-            }
-
             let mut queue_list: Vec<u16> = Vec::new();
             let mut current_score: u16 = 0;
             let mut current = index;
             
-            /*
             while current != index_objective {
-                let mut current = match queue_list.pop() {
-                    None => continue,
+                current = match queue_list.pop() {
+                    None => break,
                     Some(i) => i,
                 };
-
+                
                 for neighbour in get_neighbours(current).iter() {
                     
                 }
-
+    
                 current_score += 1;
-
+    
                 break;
             }
-            */
+            
             return 0;
         }
 
@@ -876,12 +881,12 @@ impl Game {
 
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
-        *DRAW_COLORS = 0b0000_0000_0001_0000;
         let index = self.current_player as usize;
+        *DRAW_COLORS = if self.action_possible[index] { 0b0000_0000_0001_0000 } else { 0b0000_0000_0100_0000 };
         let (posx, posy) = vec_from_grid(self.cursors[index]);
         let posx = posx.saturating_sub(self.view_local_cameras[index].0) as i32;
         let posy = posy.saturating_sub(self.view_local_cameras[index].1) as i32;
-        let offset: i32 = if self.tick > 30 { 1 } else { 0 };
+        let offset: i32 = if self.tick > 30 && self.action_possible[index] { 1 } else { 0 };
         let mut offset_x: i32 = 0;
         let mut offset_y: i32 = 0;
         let mut offset_x2: i32 = 0;
@@ -988,6 +993,61 @@ fn apply_direction(index: u16, dir: Direction) -> Option<u16> {
 
     let (x, y) = (x as u8, y as u8);
     ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x)).then(|| grid_from_vec(x, y))
+}
+
+fn get_neighbours(index: u16) -> [u16; 8] {
+    let y = GRID_SIZE_X as i16;
+    let index = index as i16;
+    let mut r = [u16::MAX; 8];
+
+    for result in [
+        index + y,
+        index + 1 + y,
+        index + 1,
+        index + 1 - y,
+        index - y,
+        index - 1 - y,
+        index - 1,
+        index - 1 + y,
+    ].iter().enumerate() {
+        trace("hi".to_owned() + &result.0.to_string());
+        let (x, y) = vec_from_grid(*result.1 as u16);
+        if (0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x) { r[result.0] = *result.1 as u16 } 
+    }
+
+    return r
+}
+
+// I am going to gouge out my eyeballs
+fn get_neighbours_in_range(index: u16, range_x: Range<i16>, range_y: Range<i16>) -> [u16; 8] {
+    let index = vec_from_grid(index);
+    let mut r: [u16; range_x * range_y] = [u16::MAX; 8];
+    let mut vec_index = 0;
+    for x in range_x.clone() {
+        for y in range_y.clone() {
+            r[vec_index] = if (0..GRID_SIZE_Y).contains(&((index.1 as i16 + y) as u8)) && (0..GRID_SIZE_X).contains(&((index.0 as i16 + x) as u8)) { grid_from_vec((index.0 as i16 + x) as u8, (index.1 as i16 + y) as u8) } else { u16::MAX };
+            vec_index += 1;
+        }
+    }
+
+    /*
+    for result in [
+        index + y,
+        index + 1 + y,
+        index + 1,
+        index + 1 - y,
+        index - y,
+        index - 1 - y,
+        index - 1,
+        index - 1 + y,
+    ].iter().enumerate() {
+        trace("hi".to_owned() + &result.0.to_string());
+        let (x, y) = vec_from_grid(*result.1 as u16);
+        if (0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x) { r[result.0] = *result.1 as u16 } 
+    }
+    */
+
+    return r
 }
 
 fn random_direction() -> Direction {

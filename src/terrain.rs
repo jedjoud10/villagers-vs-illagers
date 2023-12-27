@@ -35,7 +35,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 8
             },
             dimensions: (2, 2),
-            spawn_min_max: (1, 4),
+            spawn_min_max: (2, 5),
             range_to_spawn: [(10, 10), (20, 20)],
         },
         Feature {
@@ -104,7 +104,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             },
             dimensions: (1, 1),
             spawn_min_max: (1, 8),
-            range_to_spawn: [(5, 5), (25, 25)],
+            range_to_spawn: [(13, 13), (17, 17)],
         },
         Feature {
             closure: CellState::Hay,
@@ -123,7 +123,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 15
             },
             dimensions: (2, 1),
-            spawn_min_max: (1, 8),
+            spawn_min_max: (3, 8),
             range_to_spawn: [(8, 8), (22, 22)],
         },
         Feature {
@@ -133,7 +133,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 15
             },
             dimensions: (1, 2),
-            spawn_min_max: (1, 8),
+            spawn_min_max: (2, 8),
             range_to_spawn: [(12, 12), (18, 18)],
         },
     ];
