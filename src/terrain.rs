@@ -1,11 +1,23 @@
 use crate::{grid_from_vec, BuildingState, CellState, AREA, GRID_SIZE_X, GRID_SIZE_Y};
 
+const MAX_SPAWN_ATTEMPTS: usize = 1000;
+
 // Terrain feature that we could generate
 struct Feature {
+    // closure for custom building / bigsprite spawning logic
+    // called for each x,y in the dimensions of the feature
     closure: fn(u8) -> CellState,
+
+    // calculates if we should spawn building given a random position input 
     probability: fn(u8, u8) -> bool,
+
+    // dimensions of the feature in sprite size
     dimensions: (u8, u8),
+
+    // minimum..maximum count of the number of spawns that we should do
     spawn_min_max: (u16, u16),
+
+    // simple AABB that depicts the spawning bounds
     range_to_spawn: [(u8, u8); 2],
 }
 
@@ -23,6 +35,8 @@ pub fn generate() -> Box<[CellState; AREA]> {
     let mut grid: Box<[CellState; AREA]> =
         unsafe { Box::from_raw(Box::into_raw(temp) as *mut [CellState; AREA]) };
 
+    // NOTE: features defined EARLIER in this array will be PRIORITIZED
+    // i.e: we will try spawning the houses FIRST, *then* we will try spawning tree
     let features = [
         Feature {
             closure: |i| CellState::House(BuildingState::Solid, i),
@@ -32,10 +46,10 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 }
 
                 let (x, y) = (x as i8, y as i8);
-                dist(x, y, 15, 15) < 8
+                dist(x, y, 15, 15) < 4
             },
             dimensions: (2, 2),
-            spawn_min_max: (2, 5),
+            spawn_min_max: (3, 6),
             range_to_spawn: [(10, 10), (20, 20)],
         },
         Feature {
@@ -46,7 +60,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 }
 
                 let (x, y) = (x as i8, y as i8);
-                dist(x, y, 15, 15) < 8
+                dist(x, y, 15, 15) < 16
             },
             dimensions: (2, 2),
             spawn_min_max: (1, 4),
@@ -60,10 +74,10 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 }
 
                 let (x, y) = (x as i8, y as i8);
-                dist(x, y, 15, 15) < 8
+                dist(x, y, 15, 15) < 16
             },
             dimensions: (2, 3),
-            spawn_min_max: (1, 4),
+            spawn_min_max: (2, 6),
             range_to_spawn: [(10, 10), (20, 20)],
         },
         Feature {
@@ -73,8 +87,8 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) > 15
             },
             dimensions: (2, 2),
-            spawn_min_max: (10, 120),
-            range_to_spawn: [(0, 0), (30, 30)],
+            spawn_min_max: (10, 60),
+            range_to_spawn: [(0, 0), (GRID_SIZE_X, GRID_SIZE_Y)],
         },
         Feature {
             closure: CellState::Tree,
@@ -83,8 +97,8 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) > 15
             },
             dimensions: (2, 2),
-            spawn_min_max: (50, 140),
-            range_to_spawn: [(0, 0), (30, 30)],
+            spawn_min_max: (30, 60),
+            range_to_spawn: [(0, 0), (GRID_SIZE_X, GRID_SIZE_Y)],
         },
         Feature {
             closure: |_| CellState::Rock,
@@ -93,8 +107,8 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) > 15
             },
             dimensions: (1, 1),
-            spawn_min_max: (20, 120),
-            range_to_spawn: [(0, 0), (30, 30)],
+            spawn_min_max: (20, 60),
+            range_to_spawn: [(0, 0), (GRID_SIZE_X, GRID_SIZE_Y)],
         },
         Feature {
             closure: |_| CellState::Bell,
@@ -147,8 +161,10 @@ pub fn generate() -> Box<[CellState; AREA]> {
     } in features
     {
         let mut count = 0;
+        let min_count = spawn_min_max.0;
+        let max_count = spawn_min_max.1;
 
-        'a: loop {
+        'a: for _ in 0..(MAX_SPAWN_ATTEMPTS) {
             let x = fastrand::u8(range_to_spawn[0].0..(range_to_spawn[1].0));
             let y = fastrand::u8(range_to_spawn[0].1..(range_to_spawn[1].1));
 
@@ -167,7 +183,13 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 count += 1;
             }
 
-            if (spawn_min_max.0..spawn_min_max.1).contains(&count) {
+            // we can no longer spawn any more features of this type
+            if count > max_count {
+                break 'a;
+            }
+
+            // we have spawned *enough*, but we could spawn more if we wanted to (50/50 random chance to continue)
+            if count > min_count && fastrand::bool() {
                 break 'a;
             }
         }

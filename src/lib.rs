@@ -5,8 +5,13 @@ mod wasm4;
 pub use sprites::*;
 use std::{mem::transmute, cell::Cell, ops::Range};
 use wasm4::*;
+mod sound;
+pub use sound::*;
 
 static mut GAME: Option<Game> = None;
+
+// Debug constants
+const DEBUG_PALETTE: bool = false;
 
 // Price constants
 const VINDICATOR: u8 = 1;
@@ -20,8 +25,12 @@ const SMITH: u8 = EVOKER;
 pub const GRID_SIZE_X: u8 = 30;
 pub const GRID_SIZE_Y: u8 = 30;
 pub const AREA: usize = GRID_SIZE_X as usize * GRID_SIZE_Y as usize;
+type Board = Box<[CellState; AREA]>;
 pub const GRID_LOCAL_SIZE_X: u8 = 16;
 pub const GRID_LOCAL_SIZE_Y: u8 = 12;
+
+// Gameplay constant
+pub const CURSOR_MOVEMENT_SPEED_INV: u8 = 7;
 
 // Village stuff goes first since P1 is controlling the villagers
 const PRICES: [u8; 6] = [VILLAGER, FARMER, SMITH, VINDICATOR, PILLAGER, EVOKER];
@@ -162,12 +171,32 @@ struct Game {
     sheet: Sprite,
     current_selected_class: [u8; 2],
     goals: [u8; 4],
-    grid: Box<[CellState; AREA]>,
+    grid: Board,
+}
+
+enum Color {
+    Lightest,
+    Lighter,
+    Darker,
+    Darkest,
+    Transparent
+}
+
+impl Color {
+    fn to_raw(self) -> u8 {
+        match self {
+            Color::Lightest => 1,
+            Color::Lighter => 2,
+            Color::Darker => 3,
+            Color::Darkest => 4,
+            Color::Transparent => 0,
+        }
+    }
 }
 
 impl Game {
     unsafe fn new() -> Self {
-        // grey, beige, green, brown
+        // lightest, lighter, darker, darkest
         *PALETTE = [0xeacfb2, 0xc69478, 0x8a5543, 0x441d1f];
 
         // Read seed from disk and increment it, saving it again
@@ -186,11 +215,16 @@ impl Game {
         fastrand::seed(seed);
         let grid = terrain::generate();
 
+        // the villager camera always starts at the middle of the map (village)
+        let (mid_x, mid_y) = (GRID_SIZE_X / 2, GRID_SIZE_Y / 2);
+        let village_cursor = grid_from_vec(mid_x, mid_y);
+
+
         Self {
             seed,
             emeralds: [200, 100],
             tick: 0,
-            cursors: [0, 0],
+            cursors: [village_cursor, 0],
             current_player: 0,
             button_held: [false, false],
             action_possible: [false, false],
@@ -201,8 +235,16 @@ impl Game {
             goals: [u8::MAX; 4],
             sheet: sprite!("../packed/sprite.pak"),
             grid,
-            view_local_cameras: [(0, 0), (0, 0)],
+            view_local_cameras: [(mid_x - GRID_LOCAL_SIZE_X / 2, mid_y - GRID_LOCAL_SIZE_Y / 2), (0, 0)],
         }
+    }
+
+    unsafe fn set_text_colors(text_color: Color, background_color: Color) {
+        *DRAW_COLORS = ((text_color.to_raw()) | (background_color.to_raw() << 4)) as u16;
+    }
+
+    unsafe fn set_rect_colors(infill_color: Color, outline_color: Color) {
+        *DRAW_COLORS = ((infill_color.to_raw()) | (outline_color.to_raw() << 4)) as u16;
     }
 
     unsafe fn run(&mut self) {
@@ -228,11 +270,24 @@ impl Game {
             self.draw_footer();
             self.draw_cursors();
 
+            if (DEBUG_PALETTE) {
+                self.debug_palette();
+            }
+
             self.tick += 1;
             self.tick %= 60;
         }
     }
 
+    //
+    //
+    // "SUMMON" TYPE ACTIONS: 0..=2
+    // they summon:
+    //    index       |     0       |    1     |    2
+    // villager clan  |  villager   | farmer   | smith      
+    // illager clan   |  vindicator | pillager | evoker     
+    //
+    //
     fn action_possible(&mut self) {
         // === Villagers ===
         // 1, 2, 3 & on house? true else false
@@ -253,18 +308,41 @@ impl Game {
                 false
             }
         }
+
+        // If we are controlling Villagers, we want to be able to summon villagers when doing the "Action" when we have a building selected
+        fn can_we_spawn_villagers(cell: &CellState, cursor: u16) -> bool {
+            matches!(*cell, CellState::House(_, _) | CellState::Church(_, _) | CellState::House2(_, _))
+        }
+
+        // If we are controlling Illagers, we want to be able to summon them at the border of the map, and on empty cells as well
+        fn can_we_spawn_illagers(cell: &CellState, cursor: u16) -> bool {
+            matches!(*cell, CellState::Empty) && at_border(cursor)
+        }
         
-        for index in 0..2 {
-            let grid_pos = &self.grid[self.cursors[index] as usize];
-            self.action_possible[index] = match self.current_selected_class[index] {
+        for player_index in 0..2 {
+            // calculate the cursor position and cell of the current player
+            let cursor = self.cursors[player_index] as u16;
+            let cell = &self.grid[cursor as usize];
+
+            self.action_possible[player_index] = match self.current_selected_class[player_index] {
+                // actions 0..=2 are the "summon type actions"
+                // they summon:
+                //    index       |     0       |    1     |    2
+                // villager clan  |  villager   | farmer   | smith      
+                // illager clan   |  vindicator | pillager | evoker     
                 0..=2 => {
-                    if index == 0 && matches!(*grid_pos, CellState::House(_, _) | CellState::Church(_, _) | CellState::House2(_, _)) {
-                        self.emeralds[0] >= self.current_selected_class[0] + 1
-                    } else if index == 1 && matches!(*grid_pos, CellState::Empty) && at_border(self.cursors[1]) {
-                        self.emeralds[1] >= self.current_selected_class[1] + 1
-                    } else {
-                        false
-                    }
+                    // check if player has enough currency (them emmies)
+                    let player_has_enough_currency = self.emeralds[player_index] >= self.current_selected_class[player_index];
+
+                    // check if the player can do the specified action
+                    let player_can_do_thing = if player_index == 0 {
+                        can_we_spawn_villagers(cell, cursor)
+                    } else  {
+                        can_we_spawn_illagers(cell, cursor)
+                    };
+
+                    // check if we can do both...
+                    player_has_enough_currency && player_can_do_thing
                 }
 
                 3 | 5 => {
@@ -272,7 +350,7 @@ impl Game {
                 }
 
                 4 => {
-                    if matches!(*grid_pos, CellState::Empty) {
+                    if matches!(*cell, CellState::Empty) {
                         true
                     } else {
                         false
@@ -339,7 +417,7 @@ impl Game {
             let grid_pos: &mut u16 = &mut self.cursors[index];
             let camera = &mut self.view_local_cameras[index];
             let tick: &mut u8 = &mut self.cursor_timer[index];
-            let tick_check: bool = *tick % 7 == 0;
+            let cursor_tick_check: bool = *tick % CURSOR_MOVEMENT_SPEED_INV == 0;
             *tick = tick.wrapping_add(1);
 
             let mut step_left: i8 = -1;
@@ -406,10 +484,10 @@ impl Game {
                     };
                 }
 
-                _ => {}
+                _ => { }
             }
 
-            if tick_check && current != 0 {
+            if cursor_tick_check && current != 0 {
                 let (x, y) = if current & BUTTON_UP != 0 {
                     (0, step_up)
                 } else if current & BUTTON_DOWN != 0 {
@@ -438,12 +516,14 @@ impl Game {
             if new & BUTTON_2 != 0 {
                 *selected += 1;
                 *selected %= 6;
+                play_me_some_tones______boy(Noise::TungTungTungSahour);
             }
 
             // Place currently selected class
             // Action possible permits this to happen,
             // This is determined somewhere else (TBD)
             if new & BUTTON_1 != 0 && self.action_possible[index] {
+                trace("player is doing action!");
                 let points: &mut u8 = &mut self.emeralds[index];
 
                 // make sure the cell is empty so we can place our shit there
@@ -458,70 +538,30 @@ impl Game {
                         // this makes things so much easier lol nice
                         let cell: Option<&mut CellState> = if index == 1 && matches!(self.grid[*grid_pos as usize], CellState::Empty) { 
                             Some(&mut self.grid[*grid_pos as usize])
-                        } else { // Assuming the logic has already figured out that this is a house
-                            // get a cell around the house...
+                        } else {
+                            // pick a plausible spawning position on the outline of the building
+                            trace("pick spawn location...");
+                            let random_position_building_outline: Option<u16> = match self.grid[*grid_pos as usize] {
+                                CellState::Church(_i, j) => pick_random_location_building_outline(
+                                    &self.grid,
+                                    2,
+                                    3,
+                                    j, 
+                                    *grid_pos
+                                ),
 
-                            /* 
-                                pseudocode
-                                - make array
-                                - find all possible positions by figuring out position
-                                and working off of that
-                                - 2 houses 8
-                                - church 10
-                                - random int in the range of the array
-                            */
-        
-                            let result: Option<&mut CellState>;
+                                CellState::House(_i, j) | CellState::House2(_i, j) => pick_random_location_building_outline(
+                                    &self.grid,
+                                    2,
+                                    2,
+                                    j, 
+                                    *grid_pos
+                                ),
 
-                            let y: i16 = GRID_SIZE_X as i16;
-
-                            let positions: Vec<_> = match self.grid[*grid_pos as usize] {
-                                CellState::Church(_i, j) => {
-                                    let j = j as i16;
-                                    let offset_x: i16 = j % 2;
-                                    let offset_y: i16 = j / 2 * y; // done using j
-                    
-                                    [
-                                        -offset_x - y - offset_y, // 1 top
-                                        -offset_x + 1 - y - offset_y, // 2 top
-                                        -offset_x - 1 - offset_y, // 3
-                                        -offset_x + 2 - offset_y, // 4
-                                        -offset_x - 1 + y - offset_y, // 5
-                                        -offset_x + 2 + y - offset_y, // 6
-                                        -offset_x - 1 + (y * 2) - offset_y, // 7
-                                        -offset_x + 2 + (y * 2) - offset_y, // 8
-                                        -offset_x + (y * 3) - offset_y, // 9
-                                        -offset_x + 1 + (y * 3) - offset_y, // 10
-                                    ].to_vec()
-                                }
-
-                                CellState::House(_i, j) | CellState::House2(_i, j) => {
-                                    let j = j as i16;
-                                    let y = GRID_SIZE_X as i16;
-                                    let offset_x: i16 = j % 2;
-                                    let offset_y: i16 = j / 2 * y; // done using j
-                                    [
-                                        -offset_x - y - offset_y, // 1 top
-                                        -offset_x + 1 - y - offset_y, // 2 top
-                                        -offset_x - 1 - offset_y, // 3
-                                        -offset_x + 2 - offset_y, // 4
-                                        -offset_x - 1 + y - offset_y, // 5
-                                        -offset_x + 2 + y - offset_y, // 6
-                                        -offset_x + (y * 2) - offset_y, // 7
-                                        -offset_x + 1 + (y * 2) - offset_y, // 8
-                                    ].to_vec()
-                                }
-
-                                _ => {[].to_vec()}
-                            }.into_iter().filter(|position: &i16| matches!(self.grid[(*grid_pos as i16 + *position as i16) as usize], CellState::Empty)).collect();
-
-                            result = if positions.len() == 0 {
-                                None
-                            } else {
-                                Some(&mut self.grid[(*grid_pos as i16 + positions[fastrand::usize(0..positions.len())]) as usize])
+                                _ => None
                             };
-                            
-                            result
+
+                            random_position_building_outline.map(|position| &mut self.grid[position as usize])
                         };
 
                         // "index" is play index (where 0 is villager and 1 is illager)
@@ -535,18 +575,16 @@ impl Game {
                                 (0, 2) => CellState::VillagerClan(VillagerClan::Smith(0)),
 
                                 // illager clan classes
-                                (1, 0) => {
-                                    CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle)
-                                }
-                                (1, 1) => {
-                                    CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle)
-                                }
-                                (1, 2) => {
-                                    CellState::IllagerClan(IllagerClan::Evoker(0), IllagerState::Idle)
-                                }
+                                (1, 0) => CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
+                                (1, 1) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
+                                (1, 2) => CellState::IllagerClan(IllagerClan::Evoker(0), IllagerState::Idle),                                
 
                                 _ => CellState::Empty,
                             };
+
+                            play_me_some_tones______boy(Noise::Ting);
+                        } else {
+                            play_me_some_tones______boy(Noise::SixSeven);
                         }
                     }
                 } else {
@@ -557,7 +595,6 @@ impl Game {
             self.button_held[index] = current & BUTTON_1 != 0;
         }
     }
-
 
     // Iterate on all pieces
     fn update(&mut self) {
@@ -647,13 +684,13 @@ impl Game {
     unsafe fn draw_footer(&mut self) {
         let class = self.current_selected_class[self.current_player as usize];
 
-        *DRAW_COLORS = 0b0100000;
+        Self::set_rect_colors(Color::Lightest, Color::Darkest);
         rect(0, 120, 160, 35);
 
-        *DRAW_COLORS = 0b1000100;
+        Self::set_rect_colors(Color::Darkest, Color::Darkest);
         rect(0, 155, 160, 5);
 
-        *DRAW_COLORS = 0b0100_0000_0000_0100;
+        Self::set_text_colors(Color::Darkest, Color::Lightest);
         let mut buffer = itoa::Buffer::new();
         text(
             buffer.format(self.emeralds[self.current_player as usize]),
@@ -722,13 +759,14 @@ impl Game {
     // Draw the background color
     fn draw_background(&self) {
         unsafe {
-            *DRAW_COLORS = 0b0011_0011_0011_0011;
+            Self::set_rect_colors(Color::Darker, Color::Darker);
+            //*DRAW_COLORS = 0b0011_0011_0011_0011;
         }
         rect(0, 0, 160, 120);
     }
 
     // Common functionality for rendering multi-sprite buildings (houses, church, bell, torch pole)
-    // width and height are in sprite size (so for house this would be 2, 2)
+    // mega_width are in bigsprite size (so for house this would be 2)
     fn draw_multi_grid_sprite(
         &self,
         index: u8,
@@ -995,6 +1033,60 @@ fn apply_direction(index: u16, dir: Direction) -> Option<u16> {
     ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x)).then(|| grid_from_vec(x, y))
 }
 
+// picks a random location on the skirts of a building (on the outline)
+// returns None if the building is completely surrounded
+// returns Some with a position of a cell if it DID find a valid cell
+fn pick_random_location_building_outline(
+    board: &Board,
+    building_bigsprite_width: u8,
+    building_bigsprite_height: u8,
+    big_sprite_subcell_index: u8,
+    cursor_grid_pod: u16,
+) -> Option<u16> {
+    /* 
+        pseudocode
+        - make array
+        - find all possible positions by figuring out position and working off of that
+        - discard cells that are full / occupied by buildings
+        - pick random cell in the range of that array
+    */
+
+    let j = big_sprite_subcell_index;
+    let (a, b) = vec_from_grid(cursor_grid_pod);
+
+    // calculate offset of the cursor *inside* of the bigsprite compared to the root position of the building
+    // we then use this to calculate the bottom-left corner position of the bigsprite
+    let cursor_offset_in_bigsprite_x = j % building_bigsprite_width;
+    let cursor_offset_in_bigsprite_y = j / building_bigsprite_width; 
+
+    // calculate the root position of the building
+    let building_root_x = (a - cursor_offset_in_bigsprite_x) as i16;
+    let building_root_y = (b - cursor_offset_in_bigsprite_y) as i16;
+
+    // go over the outline cells of the building
+    let mut possible_cells= Vec::<u16>::new();
+    for x in (building_root_x - 1)..(building_root_x + building_bigsprite_width as i16 + 1)  {
+        for y in (building_root_y - 1)..(building_root_y + building_bigsprite_height as i16 + 1)  {
+            // make sure to discard cells that are outside the bounds of the map
+            if x >= 0 && x < GRID_SIZE_X as i16 && y >= 0 && y < GRID_SIZE_Y as i16 {
+                possible_cells.push(grid_from_vec(x as u8, y as u8))
+            }
+        }
+    }
+
+    // first step: get rid of cells that are occupied
+    // this also discards cells that are *inside* the building themselves
+    let possible_cells: Vec::<u16> = possible_cells.into_iter().filter(|position: &u16| matches!(board[*position as usize], CellState::Empty)).collect();
+
+    // second step: pick a random cell if we can
+    if possible_cells.len() == 0 {
+        None
+    } else {
+        let rng = fastrand::usize(0..possible_cells.len());
+        Some(possible_cells[rng])
+    }
+}
+
 fn get_neighbours(index: u16) -> [u16; 8] {
     let y = GRID_SIZE_X as i16;
     let index = index as i16;
@@ -1018,6 +1110,7 @@ fn get_neighbours(index: u16) -> [u16; 8] {
     return r
 }
 
+/*
 // I am going to gouge out my eyeballs
 fn get_neighbours_in_range(index: u16, range_x: Range<i16>, range_y: Range<i16>) -> [u16; 8] {
     let index = vec_from_grid(index);
@@ -1049,6 +1142,7 @@ fn get_neighbours_in_range(index: u16, range_x: Range<i16>, range_y: Range<i16>)
 
     return r
 }
+*/
 
 fn random_direction() -> Direction {
     unsafe { transmute::<u8, Direction>(fastrand::u8(0..4)) }
