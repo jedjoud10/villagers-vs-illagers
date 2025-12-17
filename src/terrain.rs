@@ -150,6 +150,16 @@ pub fn generate() -> Box<[CellState; AREA]> {
             spawn_min_max: (2, 8),
             range_to_spawn: [(12, 12), (18, 18)],
         },
+        Feature {
+            closure: CellState::Stand,
+            probability: |x, y| {
+                let (x, y) = (x as i8, y as i8);
+                dist(x, y, 15, 15) < 15
+            },
+            dimensions: (2, 2),
+            spawn_min_max: (2, 4),
+            range_to_spawn: [(12, 12), (18, 18)],
+        },
     ];
 
     for Feature {

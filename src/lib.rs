@@ -25,6 +25,7 @@ const SMITH: u8 = EVOKER;
 // Main grid parameters
 pub const GRID_SIZE_X: u8 = 30;
 pub const GRID_SIZE_Y: u8 = 30;
+pub const CELL_SIZE: u8 = 10;
 pub const AREA: usize = GRID_SIZE_X as usize * GRID_SIZE_Y as usize;
 type Board = Box<[CellState; AREA]>;
 pub const GRID_LOCAL_SIZE_X: u8 = 16;
@@ -168,11 +169,18 @@ struct Game {
     current_player: u8,
     button_held: [bool; 2],
     action_possible: [bool; 2],
+    particles: Vec<Particle>,
 
     sheet: Sprite,
     current_selected_class: [u8; 2],
     goals: [u8; 4],
     grid: Board,
+}
+
+struct Particle {
+    x: u16,
+    y: u16,
+    life: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -234,6 +242,7 @@ impl Game {
             old_gamepad: [*GAMEPAD1, *GAMEPAD2],
             cursor_timer: [0, 0],
             current_selected_class: [0, 0],
+            particles: Vec::new(),
             goals: [u8::MAX; 4],
             sheet: sprite!("../packed/sprite.pak"),
             grid,
@@ -268,15 +277,20 @@ impl Game {
                 self.update();
             }
 
+            if (self.tick % 8) == 0 {
+                self.update_particles();
+            }
+
             self.action_possible();
             self.fetch_input();
             self.draw_background();
             self.draw_sprites();
+            self.draw_particles();
             self.draw_footer();
             self.draw_cursors();
             self.debug_minimap();
 
-            if (DEBUG_PALETTE) {
+            if DEBUG_PALETTE {
                 self.debug_palette();
             }
 
@@ -603,7 +617,7 @@ impl Game {
     }
 
     // Iterate on all pieces
-    fn update(&mut self) {
+    unsafe fn update(&mut self) {
         fn swap_cells(src: u16, dst: u16, grid: &mut [CellState]) {
             let tmp = grid[src as usize];
             grid[src as usize] = grid[dst as usize];
@@ -658,46 +672,112 @@ impl Game {
         let mut suspicious_grid: Box<[CellState; AREA]> = self.grid.clone();
         let grid_ref: &mut [CellState; AREA] = &mut suspicious_grid;
 
-        for (_index, state) in self.grid.iter().enumerate() {
+        for (index, state) in self.grid.iter().enumerate() {
             match state {
                 CellState::IllagerClan(id, _state) => match id {
                     IllagerClan::Vindicator => {
                         // check first for primary objectives (killing)
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                     IllagerClan::Pillager => {
                         // check first for primary objectives (shooting or pillaging)
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                     IllagerClan::Evoker { .. } => {
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                     IllagerClan::Vex { .. } => {
                         // just wander around or kill lol
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                 },
 
                 CellState::VillagerClan(id) => match id {
                     VillagerClan::Villager => {
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                     VillagerClan::Farmer => {
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                     VillagerClan::Smith { .. } => {
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                     VillagerClan::Golem { .. } => {
-                        try_move(_index as u16, pathfind(_index as u16, 0, grid_ref), grid_ref);
+                        try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                 },
+
+                CellState::House(BuildingState::Burning, j) | CellState::House2(BuildingState::Burning, j) => {
+                    let (x, y) = vec_from_grid(index as u16);
+                    let (x, y) = (x as i32, y as i32);
+
+                    
+                }
 
                 _ => continue,
             }
         }
 
         self.grid = suspicious_grid;
+    }
+
+    // Do particle effect shit
+    unsafe fn update_particles(&mut self) {
+        for (index, state) in self.grid.iter().enumerate() {
+            match state {
+                // make sure we only look at the TOP LEFT sub-cell of the house
+                // everything will now use that local reference frame
+                CellState::House(BuildingState::Burning, 0) | CellState::House2(BuildingState::Burning, 0) => {
+                    let (dst_x, dst_y) = vec_from_grid(index as u16);
+                    let (mut dst_x, mut dst_y) = (dst_x as u16 * CELL_SIZE as u16, dst_y as u16 * CELL_SIZE as u16);
+
+                    // make sure the smoke starts at the door
+                    dst_x += 8;
+                    dst_y += 14;
+
+                    for _ in 0..3 {
+                        // add randomness to start x position
+                        let rng_offset_x = fastrand::u16(0..4);
+                        let rng_offset_life = fastrand::u16(0..4);
+                        
+                        // max particle count... otherwise... we doodoo....
+                        if self.particles.len() < 300 {
+                            self.particles.push(Particle { x: dst_x + rng_offset_x, y: dst_y, life: 16 + rng_offset_life })
+                        }
+                    }
+                }
+
+                _ => continue,
+            }
+        }
+
+        for Particle { x, y, life } in self.particles.iter_mut() {
+            *y = y.wrapping_sub(1);
+
+            // randomize x spread
+            if (fastrand::bool()) {
+                *x = x.wrapping_add_signed(fastrand::i16(-1..=1));
+            }
+
+            *life = life.saturating_sub(1);
+        }
+
+        self.particles.retain(|Particle { x, y, life, .. }| *life > 0 && *x < (CELL_SIZE as u16 * GRID_SIZE_X as u16) && *y < (CELL_SIZE as u16 * GRID_SIZE_Y as u16));
+        self.particles.shrink_to_fit();
+    }
+
+    // Render particle effect shit
+    unsafe fn draw_particles(&self) {
+        let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
+        let range_pixel_x = ((offset_x as u16 * CELL_SIZE as u16))..(((offset_x + GRID_LOCAL_SIZE_X) as u16 * CELL_SIZE as u16));
+        let range_pixel_y = ((offset_y as u16 * CELL_SIZE as u16))..(((offset_y + GRID_LOCAL_SIZE_Y) as u16 * CELL_SIZE as u16));
+
+        for Particle { x, y, .. } in self.particles.iter() {
+            if range_pixel_x.contains(x) && range_pixel_y.contains(y) {
+                Self::set_rect_colors(Color::Lightest, Color::Lightest);
+                rect((x - range_pixel_x.start) as i32, (y - range_pixel_y.start) as i32, 1, 1);
+            }
+        }
     }
 
     // Draw a footer containing points, classes to summon, and current selected cell
@@ -807,12 +887,12 @@ impl Game {
     ) {
         let x_offset = (index % mega_width) as u32;
         let y_offset = (index / mega_width) as u32;
-        self.draw_grid_sprite(x_offset * 10 + src_x, y_offset * 10 + src_y, dst_x, dst_y)
+        self.draw_grid_sprite(x_offset * (CELL_SIZE as u32) + src_x, y_offset * (CELL_SIZE as u32) + src_y, dst_x, dst_y)
     }
 
     // Util function for grid sprites only
     fn draw_grid_sprite(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
-        self.draw_sprite(dst_x, dst_y, 10, 10, src_x, src_y)
+        self.draw_sprite(dst_x, dst_y, (CELL_SIZE as u32), (CELL_SIZE as u32), src_x, src_y)
     }
 
     // Draw a background grass sprite before rendering other sprites
@@ -860,8 +940,8 @@ impl Game {
                 let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
                 let state =
                     &self.grid[grid_from_vec(base_x + offset_x, base_y + offset_y) as usize];
-                let dst_x = (base_x * 10) as i32;
-                let dst_y = (base_y * 10) as i32;
+                let dst_x = (base_x * CELL_SIZE) as i32;
+                let dst_y = (base_y * CELL_SIZE) as i32;
 
                 self.draw_background_grass((base_x, base_y), (offset_x, offset_y), (dst_x, dst_y));
 
@@ -901,21 +981,27 @@ impl Game {
                     }
 
                     CellState::House(state, i) => {
+                        let src_x = 0;
+                        /*
                         let src_x = match state {
                             BuildingState::Solid => 0,
                             BuildingState::Burning => 20 + burning_x_offset,
                             BuildingState::Destroyed => 60,
                         };
+                        */
 
                         self.draw_multi_grid_sprite(*i, 2, src_x, 20, dst_x, dst_y);
                     }
 
                     CellState::House2(state, i) => {
+                        let src_x = 0;
+                        /*
                         let src_x = match state {
                             BuildingState::Solid => 0,
                             BuildingState::Burning => 20 + burning_x_offset,
                             BuildingState::Destroyed => 60,
                         };
+                        */
 
                         self.draw_multi_grid_sprite(*i, 2, src_x, 60, dst_x, dst_y);
                     }
@@ -931,11 +1017,14 @@ impl Game {
                     CellState::Tree(i) => self.draw_multi_grid_sprite(*i, 2, 40, 40, dst_x, dst_y),
                     CellState::Stand(i) => self.draw_multi_grid_sprite(*i, 2, 60, 40, dst_x, dst_y),
                     CellState::Church(state, i) => {
+                        let src_x = 0;
+                        /*
                         let src_x = match state {
                             BuildingState::Solid => 0,
                             BuildingState::Burning => 20 + burning_x_offset,
                             BuildingState::Destroyed => 60,
                         };
+                        */
                         self.draw_multi_grid_sprite(*i, 2, src_x, 80, dst_x, dst_y);
                     }
                     CellState::Farm(i) => self.draw_multi_grid_sprite(*i, 2, 0, 110, dst_x, dst_y),
