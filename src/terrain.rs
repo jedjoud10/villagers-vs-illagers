@@ -39,7 +39,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
     // i.e: we will try spawning the houses FIRST, *then* we will try spawning tree
     let features = [
         Feature {
-            closure: |i| CellState::House(BuildingState::Solid, i),
+            closure: |i| CellState::House(BuildingState::Burning, i),
             probability: |x, y| {
                 if x % 3 < 2 {
                     return false;
@@ -53,7 +53,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             range_to_spawn: [(10, 10), (20, 20)],
         },
         Feature {
-            closure: |i| CellState::House2(BuildingState::Solid, i),
+            closure: |i| CellState::House2(BuildingState::Burning, i),
             probability: |x, y| {
                 if x % 3 < 2 {
                     return false;
@@ -117,7 +117,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
                 dist(x, y, 15, 15) < 15
             },
             dimensions: (1, 1),
-            spawn_min_max: (1, 8),
+            spawn_min_max: (1, 1),
             range_to_spawn: [(13, 13), (17, 17)],
         },
         Feature {
@@ -184,7 +184,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             }
 
             // we can no longer spawn any more features of this type
-            if count > max_count {
+            if count >= max_count {
                 break 'a;
             }
 

@@ -12,6 +12,7 @@ static mut GAME: Option<Game> = None;
 
 // Debug constants
 const DEBUG_PALETTE: bool = false;
+const MULTIPLAYER: bool = false;
 
 // Price constants
 const VINDICATOR: u8 = 1;
@@ -174,6 +175,7 @@ struct Game {
     grid: Board,
 }
 
+#[derive(Clone, Copy)]
 enum Color {
     Lightest,
     Lighter,
@@ -248,7 +250,7 @@ impl Game {
     }
 
     unsafe fn run(&mut self) {
-        if (*NETPLAY >> 2) == 0 && false {
+        if (*NETPLAY >> 2) == 0 && MULTIPLAYER {
             *DRAW_COLORS = 0b0100_0000_0000_0100;
             text("Waiting for", 36, 20);
             text("player 2", 46, 30);
@@ -256,8 +258,11 @@ impl Game {
             *DRAW_COLORS = 0b0100_0011_0010_0001;
             self.draw_sprite(40, 8, 80, 10, 0, 180)
         } else {
-            //self.current_player = *NETPLAY & 0b11;
-            self.current_player = 0;
+            if MULTIPLAYER {
+                self.current_player = *NETPLAY & 0b11;
+            } else {
+                self.current_player = 0;
+            }
 
             if self.tick == 0 {
                 self.update();
@@ -269,6 +274,7 @@ impl Game {
             self.draw_sprites();
             self.draw_footer();
             self.draw_cursors();
+            self.debug_minimap();
 
             if (DEBUG_PALETTE) {
                 self.debug_palette();
@@ -542,7 +548,7 @@ impl Game {
                             // pick a plausible spawning position on the outline of the building
                             trace("pick spawn location...");
                             let random_position_building_outline: Option<u16> = match self.grid[*grid_pos as usize] {
-                                CellState::Church(_i, j) => pick_random_location_building_outline(
+                                CellState::Church(BuildingState::Solid, j) => pick_random_location_building_outline(
                                     &self.grid,
                                     2,
                                     3,
@@ -550,7 +556,7 @@ impl Game {
                                     *grid_pos
                                 ),
 
-                                CellState::House(_i, j) | CellState::House2(_i, j) => pick_random_location_building_outline(
+                                CellState::House(BuildingState::Solid, j) | CellState::House2(BuildingState::Solid, j) => pick_random_location_building_outline(
                                     &self.grid,
                                     2,
                                     2,
@@ -598,7 +604,21 @@ impl Game {
 
     // Iterate on all pieces
     fn update(&mut self) {
+        fn swap_cells(src: u16, dst: u16, grid: &mut [CellState]) {
+            let tmp = grid[src as usize];
+            grid[src as usize] = grid[dst as usize];
+            grid[dst as usize] = tmp;
+        }
+
         fn try_move(index: u16, index_objective: u16, grid: &mut [CellState]) -> bool {
+            let dir = random_direction_with_diagonal();
+            if let Some(new_pos) = apply_direction(index, dir) {
+                if matches!(grid[new_pos as usize], CellState::Empty) {
+                    swap_cells(index, new_pos, grid);
+                }
+            }
+
+            false
             /*
             if matches!(grid[index_objective as usize], CellState::Empty) {
                 grid[index_objective as usize] = grid[index as usize];
@@ -609,7 +629,7 @@ impl Game {
             }
             */
 
-            false
+            //false
         }
 
         fn pathfind(index: u16, index_objective: u16, grid: &mut [CellState]) -> u16 {
@@ -683,7 +703,16 @@ impl Game {
     // Draw a footer containing points, classes to summon, and current selected cell
     unsafe fn draw_footer(&mut self) {
         let class = self.current_selected_class[self.current_player as usize];
+        let mut clan_entity_counts: [u16; 2] = [0; 2];
 
+        for cell in self.grid.iter() {
+            match cell {
+                CellState::IllagerClan(_, _) => { clan_entity_counts[1] += 1 },
+                CellState::VillagerClan(_) => { clan_entity_counts[0] += 1 },
+                _ => {},
+            }
+        }
+        
         Self::set_rect_colors(Color::Lightest, Color::Darkest);
         rect(0, 120, 160, 35);
 
@@ -699,7 +728,7 @@ impl Game {
         );
 
         // DEBUG!!!!!!!!!!!! This shows currently selected class lol (not meant to)
-        text(buffer.format(class), 71, 144);
+        text(buffer.format(clan_entity_counts[self.current_player as usize]), 71, 144);
 
         *DRAW_COLORS = 0b0100_0011_0010_0001;
         let button = self.button_held[self.current_player as usize];
@@ -996,6 +1025,53 @@ impl Game {
         *DRAW_COLORS = 0b0100_0000_0000_0100;
         rect(150, 150, 10, 10);
     }
+
+    // Draw a debug minimap
+    unsafe fn debug_minimap(&self) {
+        const MINIMAP_PIXEL_OFFSET_X: i32 = 128;
+        const MINIMAP_PIXEL_OFFSET_Y: i32 = 123;
+
+        fn flash_my_shit_twin(
+            building_bigsprite_width: u8,
+            big_sprite_subcell_index: u8,
+            cursor_grid_pos: u16,
+            tick: u8,
+        ) -> Color {
+            let (a, b) = calculate_big_sprite_root_position(building_bigsprite_width, big_sprite_subcell_index, cursor_grid_pos);
+            let k = grid_from_vec(a, b);
+            let hash = ((k as u64).wrapping_mul(95148)) ^ 0x856465;
+
+            if (hash.wrapping_add(tick as u64) % 20) <= 10 {
+                Color::Darker
+            } else {
+                Color::Darkest
+            }
+        }
+
+        for x in 0..GRID_SIZE_X {
+            for y in 0..GRID_SIZE_Y {
+                let pos = grid_from_vec(x, y);
+                let cell = self.grid[pos as usize];
+
+
+
+                let color = match cell {
+                    CellState::Empty => Color::Transparent,
+                    CellState::IllagerClan(_, _) => Color::Darker,
+                    CellState::VillagerClan(_) => Color::Darker,
+                    CellState::House(BuildingState::Solid, _) | CellState::House2(BuildingState::Solid, _) | CellState::Church(BuildingState::Solid, _) => Color::Lighter,
+                    CellState::House(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
+                    CellState::House2(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
+                    CellState::Church(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
+                    CellState::House(_, _) | CellState::House2(_, _) | CellState::Church(_, _) => Color::Darkest,
+                    CellState::BigRock(_) | CellState::Rock | CellState::Lamppost(_) | CellState::Bell | CellState::Tree(_) | CellState::Stand(_) | CellState::Farm(_) | CellState::Hay(_) => Color::Lighter,
+                };
+
+                Self::set_rect_colors(color, color);
+                rect(MINIMAP_PIXEL_OFFSET_X+x as i32, MINIMAP_PIXEL_OFFSET_Y+y as i32, 1, 1);
+            }
+        }
+    }
 }
 
 // Convert local coords to index
@@ -1033,26 +1109,14 @@ fn apply_direction(index: u16, dir: Direction) -> Option<u16> {
     ((0..GRID_SIZE_Y).contains(&y) && (0..GRID_SIZE_X).contains(&x)).then(|| grid_from_vec(x, y))
 }
 
-// picks a random location on the skirts of a building (on the outline)
-// returns None if the building is completely surrounded
-// returns Some with a position of a cell if it DID find a valid cell
-fn pick_random_location_building_outline(
-    board: &Board,
+// calculate the bottom-left "root" position of the bigsprite given a cell state
+fn calculate_big_sprite_root_position(
     building_bigsprite_width: u8,
-    building_bigsprite_height: u8,
     big_sprite_subcell_index: u8,
-    cursor_grid_pod: u16,
-) -> Option<u16> {
-    /* 
-        pseudocode
-        - make array
-        - find all possible positions by figuring out position and working off of that
-        - discard cells that are full / occupied by buildings
-        - pick random cell in the range of that array
-    */
-
+    cursor_grid_pos: u16,
+) -> (u8, u8) {
     let j = big_sprite_subcell_index;
-    let (a, b) = vec_from_grid(cursor_grid_pod);
+    let (a, b) = vec_from_grid(cursor_grid_pos);
 
     // calculate offset of the cursor *inside* of the bigsprite compared to the root position of the building
     // we then use this to calculate the bottom-left corner position of the bigsprite
@@ -1062,6 +1126,32 @@ fn pick_random_location_building_outline(
     // calculate the root position of the building
     let building_root_x = (a - cursor_offset_in_bigsprite_x) as i16;
     let building_root_y = (b - cursor_offset_in_bigsprite_y) as i16;
+
+    return (building_root_x as u8, building_root_y as u8);
+}
+
+// picks a random location on the skirts of a building (on the outline)
+// returns None if the building is completely surrounded
+// returns Some with a position of a cell if it DID find a valid cell
+fn pick_random_location_building_outline(
+    board: &Board,
+    building_bigsprite_width: u8,
+    building_bigsprite_height: u8,
+    big_sprite_subcell_index: u8,
+    cursor_grid_pos: u16,
+) -> Option<u16> {
+    /* 
+        pseudocode
+        - make array
+        - find all possible positions by figuring out position and working off of that
+        - discard cells that are full / occupied by buildings
+        - pick random cell in the range of that array
+    */
+    
+    // calculate the root position of the building
+    let (building_root_x, building_root_y) = calculate_big_sprite_root_position(building_bigsprite_width, big_sprite_subcell_index, cursor_grid_pos);
+    let building_root_x = building_root_x as i16;
+    let building_root_y = building_root_y as i16;
 
     // go over the outline cells of the building
     let mut possible_cells= Vec::<u16>::new();
