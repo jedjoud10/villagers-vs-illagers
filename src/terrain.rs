@@ -67,7 +67,7 @@ pub fn generate() -> Box<[CellState; AREA]> {
             range_to_spawn: [(10, 10), (20, 20)],
         },
         Feature {
-            closure: |i| CellState::Church(BuildingState::Burning, i, 10),
+            closure: |i| CellState::Church(BuildingState::Solid, i, 10),
             probability: |x, y| {
                 if x % 3 < 2 {
                     return false;

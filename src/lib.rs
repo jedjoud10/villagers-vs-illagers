@@ -32,7 +32,7 @@ pub const GRID_LOCAL_SIZE_X: u8 = 16;
 pub const GRID_LOCAL_SIZE_Y: u8 = 12;
 
 // Gameplay constant
-pub const FRAMES_PER_PARTICLE_TICK: u8 = 8;
+pub const FRAMES_PER_PARTICLE_TICK: u8 = 4;
 pub const CURSOR_MOVEMENT_SPEED_INV: u8 = 7;
 pub const CHURCH_EXPLOSION_FREQUENCY_THING: u8 = 20;
 pub const MAX_PARTICLE_COUNT: usize = 300;
@@ -298,7 +298,7 @@ impl Game {
             self.draw_particles();
             self.draw_footer();
             self.draw_cursors();
-            self.debug_minimap();
+            self.draw_minimap();
 
             if DEBUG_PALETTE {
                 self.debug_palette();
@@ -801,7 +801,7 @@ impl Game {
             let corner_4 = check_if_pos_is_empty(new_position_x - 8, new_position_y - 8);
 
 
-            if corner_1 && corner_2 && corner_3 && corner_4 {
+            if corner_1 && corner_2 && corner_3 && corner_4 && (self.tick % 4) == 0 {
                 *position_x = new_position_x as u16;
                 *position_y = new_position_y as u16;
             }
@@ -1077,10 +1077,13 @@ impl Game {
     }
 
     // Draw entities
-    unsafe fn draw_entities(&self) {
+    unsafe fn draw_entities(&mut self) {
         let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
         let range_pixel_x = ((offset_x as u16 * CELL_SIZE as u16))..(((offset_x + GRID_LOCAL_SIZE_X) as u16 * CELL_SIZE as u16));
         let range_pixel_y = ((offset_y as u16 * CELL_SIZE as u16))..(((offset_y + GRID_LOCAL_SIZE_Y) as u16 * CELL_SIZE as u16));
+
+        self.entities.sort_unstable_by_key(|entity| entity.position_y);
+
         for Entity { position_x, position_y, entity_type } in self.entities.iter() {
             let dst_x = *position_x as i32 - range_pixel_x.start as i32;
             let dst_y = *position_y as i32 - range_pixel_y.start as i32;
@@ -1089,8 +1092,6 @@ impl Game {
                 EntityType::IllagerClan(_type, state) => sprites::draw_illager_entity(dst_x, dst_y, _type, state),
                 EntityType::VillagerClan(_type) => sprites::draw_villager_entity(dst_x, dst_y, _type),
             }
-            //Self::set_rect_colors(Color::Lightest, Color::Lightest);
-            //rect(, , ENTITY_SIZE as u32, ENTITY_SIZE as u32);
         }
     }
 
@@ -1175,8 +1176,8 @@ impl Game {
         rect(150, 150, 10, 10);
     }
 
-    // Draw a debug minimap
-    unsafe fn debug_minimap(&self) {
+    // Draw a minimap
+    unsafe fn draw_minimap(&self) {
         const MINIMAP_PIXEL_OFFSET_X: i32 = 128;
         const MINIMAP_PIXEL_OFFSET_Y: i32 = 123;
 
