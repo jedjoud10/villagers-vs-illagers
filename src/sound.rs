@@ -19,7 +19,7 @@ pub unsafe fn play_me_some_tones______boy(noise: Noise) {
             tone(300, 25, 9, TONE_TRIANGLE);
         }
         Noise::Burn => {
-            tone(300, 20, 5, TONE_NOISE);
+            //tone(300, 20, 5, TONE_NOISE);
         }
     }
 }

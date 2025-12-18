@@ -34,7 +34,8 @@ pub const GRID_LOCAL_SIZE_Y: u8 = 12;
 // Gameplay constant
 pub const FRAMES_PER_PARTICLE_TICK: u8 = 8;
 pub const CURSOR_MOVEMENT_SPEED_INV: u8 = 7;
-pub const CHURCH_EXPLOSION_FREQUENCY_THING: u8 = 30;
+pub const CHURCH_EXPLOSION_FREQUENCY_THING: u8 = 20;
+pub const MAX_PARTICLE_COUNT: usize = 300;
 
 // Village stuff goes first since P1 is controlling the villagers
 const PRICES: [u8; 6] = [VILLAGER, FARMER, SMITH, VINDICATOR, PILLAGER, EVOKER];
@@ -189,7 +190,8 @@ struct Game {
 struct Particle {
     x: u16,
     y: u16,
-    life: u16,
+    life: u8,
+    horizontal_velocity: i8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -710,20 +712,22 @@ impl Game {
                             let (dst_x, dst_y) = vec_from_grid(index as u16);
                             let (mut dst_x, mut dst_y) = (dst_x as u16 * CELL_SIZE as u16, dst_y as u16 * CELL_SIZE as u16);
 
-                            for _ in 0..10 {
+                            dst_x += 5;
+                            dst_y += 5;
+
+                            for _ in 0..20 {
                                 // add randomness to start x position
                                 let rng_offset_x = fastrand::i16(-2..=2);
                                 let rng_offset_y = fastrand::i16(-2..=2);
-                                let rng_offset_life = fastrand::i16(-2..=2);
+                                let rng_offset_life = fastrand::i8(-2..=7);
 
                                 // max particle count... otherwise... we doodoo....
-                                if (self.particles.len() < MAX_PARTICLE_COUNT) {
-                                    self.particles.push(Particle {
-                                        x: dst_x.saturating_add_signed(rng_offset_x),
-                                        y: dst_y.saturating_add_signed(rng_offset_y),
-                                        life: 5u16.saturating_add_signed(rng_offset_life)
-                                    });
-                                }
+                                Self::summon_particle(&mut self.particles, Particle {
+                                    x: dst_x.saturating_add_signed(rng_offset_x),
+                                    y: dst_y.saturating_add_signed(rng_offset_y),
+                                    life: 5u8.saturating_add_signed(rng_offset_life),
+                                    horizontal_velocity: fastrand::i8(..),
+                                });
                             }
                         }
                     }
@@ -782,9 +786,13 @@ impl Game {
             let new_position_y = position_y.saturating_add_signed(fastrand::i16(-4..=4)) as i16;
         
             let check_if_pos_is_empty = |new_position_x: i16, new_position_y: i16| {
-                let cell_position_x = (new_position_x as u16).div_ceil(CELL_SIZE as u16);
-                let cell_position_y = (new_position_y as u16).div_ceil(CELL_SIZE as u16);
-                matches!(self.grid[grid_from_vec(cell_position_x as u8, cell_position_y as u8) as usize], CellState::Empty)
+                if pixel_loc_in_grid_bounds(new_position_x, new_position_y) {
+                    let cell_position_x = (new_position_x as u16).div_ceil(CELL_SIZE as u16);
+                    let cell_position_y = (new_position_y as u16).div_ceil(CELL_SIZE as u16);
+                    matches!(self.grid[grid_from_vec(cell_position_x as u8, cell_position_y as u8) as usize], CellState::Empty)
+                } else {
+                    false
+                }
             };
 
             let corner_1 = check_if_pos_is_empty(new_position_x, new_position_y);
@@ -817,12 +825,13 @@ impl Game {
                     for _ in 0..3 {
                         // add randomness to start x position
                         let rng_offset_x = fastrand::u16(0..4);
-                        let rng_offset_life = fastrand::u16(0..4);
-                        
-                        // max particle count... otherwise... we doodoo....
-                        if self.particles.len() < 300 {
-                            self.particles.push(Particle { x: dst_x + rng_offset_x, y: dst_y, life: 16 + rng_offset_life })
-                        }
+                        let rng_offset_life = fastrand::u8(0..4);
+                        Self::summon_particle(&mut self.particles, Particle {
+                            x: dst_x + rng_offset_x,
+                            y: dst_y,
+                            life: 16u8 + rng_offset_life,
+                            horizontal_velocity: 0,
+                        });
                     }
                 }
 
@@ -830,21 +839,48 @@ impl Game {
             }
         }
 
-        for Particle { x, y, life } in self.particles.iter_mut() {
+        for Particle { x, y, life, horizontal_velocity } in self.particles.iter_mut() {
             *y = y.wrapping_sub(1);
 
             // randomize x spread
-            if (fastrand::bool()) {
+            if fastrand::bool() {
                 *x = x.wrapping_add_signed(fastrand::i16(-1..=1));
             }
 
             *life = life.saturating_sub(1);
+
+            if horizontal_velocity.unsigned_abs() < 64 && fastrand::bool() {
+                *x = x.saturating_add_signed((*horizontal_velocity / 4) as i16);
+            } else {
+                *x = x.saturating_add_signed((*horizontal_velocity / 32) as i16);
+            }
+
+            *horizontal_velocity /= 2;
         }
 
         self.particles.retain(|Particle { x, y, life, .. }| *life > 0 && *x < (CELL_SIZE as u16 * GRID_SIZE_X as u16) && *y < (CELL_SIZE as u16 * GRID_SIZE_Y as u16));
+        self.particles.sort_unstable_by_key(|particle| particle.life);
         self.particles.shrink_to_fit();
     }
 
+    // Custom function to summon particle
+    fn summon_particle(particles: &mut Vec<Particle>, particle: Particle) {
+        if particles.len() > MAX_PARTICLE_COUNT {
+            // holy fuck... this is so bad.... lol lmao
+            particles.sort_unstable_by_key(|particle| particle.life);
+            particles.remove(particles.len() - 1);
+            particles.push(particle);
+            particles.sort_unstable_by_key(|particle| particle.life);
+        } else {
+            particles.push(particle);
+        }
+        /*
+        // max particle count... otherwise... we doodoo....
+        if particles.len() < MAX_PARTICLE_COUNT {
+        }
+        */
+    }
+    
     // Render particle effect shit
     unsafe fn draw_particles(&self) {
         let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
@@ -854,7 +890,7 @@ impl Game {
         for Particle { x, y, .. } in self.particles.iter() {
             if range_pixel_x.contains(x) && range_pixel_y.contains(y) {
                 Self::set_rect_colors(Color::Lightest, Color::Lightest);
-                rect((x - range_pixel_x.start) as i32, (y - range_pixel_y.start) as i32, 1, 1);
+                rect((x - range_pixel_x.start) as i32, (y - range_pixel_y.start) as i32, 2, 3);
             }
         }
     }
@@ -1202,6 +1238,13 @@ fn vec_from_grid(index: u16) -> (u8, u8) {
     let x = index % (GRID_SIZE_X as u16);
     let y = index / (GRID_SIZE_X as u16);
     (x as u8, y as u8)
+}
+
+// Checks if a grid pixel location is within bounds
+fn pixel_loc_in_grid_bounds(x: i16, y: i16) -> bool {
+    let x = x >= 0 && x < CELL_SIZE as i16 * (GRID_SIZE_X as i16 - 1);
+    let y = y >= 0 && y < CELL_SIZE as i16 * (GRID_SIZE_Y as i16 - 1);
+    x && y
 }
 
 // Apply a direction in index based space
