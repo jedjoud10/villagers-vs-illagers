@@ -17,6 +17,9 @@ fastrand = "2.0.1"
 bitvec = "1.0.1"
 eyre = "0.6.8"
 png = "0.17.5"
+serde = "1.0.228"
+serde_derive = "1.0.228"
+serde_json = "1.0.145"
 
 [profile.release]
 opt-level = "z"

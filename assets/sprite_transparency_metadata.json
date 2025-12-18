@@ -1,0 +1,10 @@
+[
+    {
+        "start_x": 0,
+        "start_y": 0,
+        "pixels_per_cell_x": 10,
+        "pixels_per_cell_y": 10,
+        "cell_count_x": 8,
+        "cell_count_y": 2
+    }
+]

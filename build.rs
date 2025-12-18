@@ -33,11 +33,16 @@ fn main() {
 fn process(path: &Path) -> Result<(), eyre::Error> {
     let file = fs::File::open(path)?;
 
+
     let mut decoder = png::Decoder::new(file);
     let header = decoder.read_header_info()?;
     let height = header.height;
     let width = header.width;
     let mut info = decoder.read_info().unwrap();
+
+    // check if there is a transparency metadata file associated with this image file
+    let transparency_metadata_path = path.with_file_name(format!("{}_transparency_metadata.json", path.file_name().unwrap().to_str().unwrap()));
+    let transparency_metadata_file = fs::File::open(transparency_metadata_path);
 
     let size = info.output_buffer_size();
     let mut bytes = vec![0u8; size];
@@ -49,9 +54,9 @@ fn process(path: &Path) -> Result<(), eyre::Error> {
         .palette
         .as_ref()
         .ok_or(eyre::anyhow!("Not indexed!"))?;
-    let palette_count = (palette.len() / 3) - 1;
+    let palette_count = (palette.len() / 3) - 1; // excluding transparency
 
-    println!("cargo:warning=Widht: {}, Height: {}", width, height);
+    println!("cargo:warning=Width: {}, Height: {}", width, height);
     println!("cargo:warning=Palette Count: {}", palette_count);
     println!("cargo:warning=Buffer Size: {:?}", size);
     println!("cargo:warning=Palette: {:?}", palette);
