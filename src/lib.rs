@@ -32,8 +32,9 @@ pub const GRID_LOCAL_SIZE_X: u8 = 16;
 pub const GRID_LOCAL_SIZE_Y: u8 = 12;
 
 // Gameplay constant
-pub const FRAMES_PER_TICK: u8 = 10; // number of frames that pass before a new tick
+pub const FRAMES_PER_PARTICLE_TICK: u8 = 8;
 pub const CURSOR_MOVEMENT_SPEED_INV: u8 = 7;
+pub const CHURCH_EXPLOSION_FREQUENCY_THING: u8 = 30;
 
 // Village stuff goes first since P1 is controlling the villagers
 const PRICES: [u8; 6] = [VILLAGER, FARMER, SMITH, VINDICATOR, PILLAGER, EVOKER];
@@ -114,7 +115,9 @@ pub enum CellState {
     // 0, 1
     // 2, 3
     // 4, 5
-    Church(BuildingState, u8),
+    // first u8 is the subcell index
+    // second u8 is the count down timer
+    Church(BuildingState, u8, u8),
 
     // 0, 1
     // todo: add timer for being farmed
@@ -137,12 +140,12 @@ enum Direction {
     SW, // Down-left
 }
 
-enum EntityType {
+pub enum EntityType {
     IllagerClan(IllagerClan, IllagerState),
     VillagerClan(VillagerClan),
 }
 
-struct Entity {
+pub struct Entity {
     entity_type: EntityType,
     position_x: u16,
     position_y: u16,
@@ -178,7 +181,6 @@ struct Game {
     particles: Vec<Particle>,
     entities: Vec<Entity>,
 
-    sheet: Sprite,
     current_selected_class: [u8; 2],
     goals: [u8; 4],
     grid: Board,
@@ -190,7 +192,7 @@ struct Particle {
     life: u16,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Color {
     Lightest,
     Lighter,
@@ -251,7 +253,6 @@ impl Game {
             current_selected_class: [0, 0],
             particles: Vec::new(),
             goals: [u8::MAX; 4],
-            sheet: sprite!("../packed/sprite.pak"),
             grid,
             entities: Vec::new(),
             view_local_cameras: [(mid_x - GRID_LOCAL_SIZE_X / 2, mid_y - GRID_LOCAL_SIZE_Y / 2), (0, 0)],
@@ -273,7 +274,7 @@ impl Game {
             text("player 2", 46, 30);
             text("and mohsin", 38, 40);
             *DRAW_COLORS = 0b0100_0011_0010_0001;
-            self.draw_sprite(40, 8, 80, 10, 0, 180)
+            sprites::draw_sprite(40, 8, 80, 10, 0, 180)
         } else {
             if MULTIPLAYER {
                 self.current_player = *NETPLAY & 0b11;
@@ -281,11 +282,9 @@ impl Game {
                 self.current_player = 0;
             }
 
-            if (self.tick % FRAMES_PER_TICK) == 0 {
-                self.update();
-            }
-
-            if (self.tick % 8) == 0 {
+            self.update();
+            
+            if (self.tick % FRAMES_PER_PARTICLE_TICK) == 0 {
                 self.update_particles();
             }
 
@@ -340,7 +339,7 @@ impl Game {
 
         // If we are controlling Villagers, we want to be able to summon villagers when doing the "Action" when we have a building selected
         fn can_we_spawn_villagers(cell: &CellState, cursor: u16) -> bool {
-            matches!(*cell, CellState::House(_, _) | CellState::Church(_, _) | CellState::House2(_, _))
+            matches!(*cell, CellState::House(_, _) | CellState::Church(_, _, _) | CellState::House2(_, _))
         }
 
         // If we are controlling Illagers, we want to be able to summon them at the border of the map, and on empty cells as well
@@ -468,7 +467,7 @@ impl Game {
                     };
                 }
 
-                CellState::Church(_x, y) => {
+                CellState::Church(_x, y, _) => {
                     if y % 2 == 0 {
                         step_right *= 2
                     } else {
@@ -572,7 +571,7 @@ impl Game {
                             // pick a plausible spawning position on the outline of the building
                             trace("pick spawn location...");
                             let random_position_building_outline: Option<u16> = match self.grid[*grid_pos as usize] {
-                                CellState::Church(BuildingState::Solid, j) => pick_random_location_building_outline(
+                                CellState::Church(BuildingState::Solid, j, 1..) => pick_random_location_building_outline(
                                     &self.grid,
                                     2,
                                     3,
@@ -639,7 +638,7 @@ impl Game {
         }
     }
 
-    // Called every tick
+    // Called every frame
     unsafe fn update(&mut self) {
         fn swap_cells(src: u16, dst: u16, grid: &mut [CellState]) {
             let tmp = grid[src as usize];
@@ -697,7 +696,54 @@ impl Game {
 
         for (index, state) in self.grid.iter().enumerate() {
             match state {
-                /*
+                CellState::Church(BuildingState::Burning, j, i @ 1..) => {
+                    if (self.tick % CHURCH_EXPLOSION_FREQUENCY_THING) == (CHURCH_EXPLOSION_FREQUENCY_THING / 2) {
+                        let new_i = i.saturating_sub(1);
+                        grid_ref[index] = CellState::Church(BuildingState::Burning, *j, new_i);
+
+                        if new_i > 0 {
+                            play_me_some_tones______boy(Noise::TungTungTungSahour);
+                        } else {
+                            // KABOOM TYPE TIMING!!!!!!!!!!
+                            play_me_some_tones______boy(Noise::KaboomNoise);
+
+                            let (dst_x, dst_y) = vec_from_grid(index as u16);
+                            let (mut dst_x, mut dst_y) = (dst_x as u16 * CELL_SIZE as u16, dst_y as u16 * CELL_SIZE as u16);
+
+                            for _ in 0..10 {
+                                // add randomness to start x position
+                                let rng_offset_x = fastrand::i16(-2..=2);
+                                let rng_offset_y = fastrand::i16(-2..=2);
+                                let rng_offset_life = fastrand::i16(-2..=2);
+
+                                // max particle count... otherwise... we doodoo....
+                                if (self.particles.len() < MAX_PARTICLE_COUNT) {
+                                    self.particles.push(Particle {
+                                        x: dst_x.saturating_add_signed(rng_offset_x),
+                                        y: dst_y.saturating_add_signed(rng_offset_y),
+                                        life: 5u16.saturating_add_signed(rng_offset_life)
+                                    });
+                                }
+                            }
+                        }
+                    }
+                },
+                CellState::Church(_, j, 0) => {
+                    grid_ref[index] = CellState::Church(BuildingState::Destroyed, *j, 0);
+                },
+                CellState::House(BuildingState::Burning, _) | CellState::House2(BuildingState::Burning, _) => {
+                    play_me_some_tones______boy(Noise::Burn);
+                }
+
+
+                _ => continue,
+            }
+        }
+
+        self.grid = suspicious_grid;
+
+        for Entity { position_x, position_y, .. } in self.entities.iter_mut() {
+            /*
                 CellState::IllagerClan(id, _state) => match id {
                     IllagerClan::Vindicator => {
                         // check first for primary objectives (killing)
@@ -730,23 +776,27 @@ impl Game {
                         try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                 },
-                */
-                CellState::House(BuildingState::Burning, j) | CellState::House2(BuildingState::Burning, j) => {
-                    let (x, y) = vec_from_grid(index as u16);
-                    let (x, y) = (x as i32, y as i32);
+            */
 
-                    
-                }
+            let new_position_x = position_x.saturating_add_signed(fastrand::i16(-4..=4)) as i16;
+            let new_position_y = position_y.saturating_add_signed(fastrand::i16(-4..=4)) as i16;
+        
+            let check_if_pos_is_empty = |new_position_x: i16, new_position_y: i16| {
+                let cell_position_x = (new_position_x as u16).div_ceil(CELL_SIZE as u16);
+                let cell_position_y = (new_position_y as u16).div_ceil(CELL_SIZE as u16);
+                matches!(self.grid[grid_from_vec(cell_position_x as u8, cell_position_y as u8) as usize], CellState::Empty)
+            };
 
-                _ => continue,
+            let corner_1 = check_if_pos_is_empty(new_position_x, new_position_y);
+            let corner_2 = check_if_pos_is_empty(new_position_x - 8, new_position_y);
+            let corner_3 = check_if_pos_is_empty(new_position_x, new_position_y - 8);
+            let corner_4 = check_if_pos_is_empty(new_position_x - 8, new_position_y - 8);
+
+
+            if corner_1 && corner_2 && corner_3 && corner_4 {
+                *position_x = new_position_x as u16;
+                *position_y = new_position_y as u16;
             }
-        }
-
-        self.grid = suspicious_grid;
-
-        for Entity { position_x, position_y, .. } in self.entities.iter_mut() {
-            *position_x = position_x.saturating_add_signed(fastrand::i16(-2..=2));
-            *position_y = position_y.saturating_add_signed(fastrand::i16(-2..=2));
         }
     }
 
@@ -845,7 +895,7 @@ impl Game {
         // Draw class portraits - width 17, height 27
         for x in 0..3 {
             let offset: u8 = if class == x as u8 && !button { 0 } else { 1 };
-            self.draw_sprite(
+            sprites::draw_sprite(
                 4 + 19 * x + offset as i32,
                 124 + offset as i32,
                 17 - offset as u32,
@@ -862,7 +912,7 @@ impl Game {
             } else {
                 1
             };
-            self.draw_sprite(
+            sprites::draw_sprite(
                 61 + 11 * x + offset,
                 124 + offset,
                 9 - offset as u32,
@@ -873,25 +923,10 @@ impl Game {
         }
 
         // Draw villager and emerald symbols (text above)
-        self.draw_sprite(62, 135, 6, 7, 51, 123);
-        self.draw_sprite(62, 144, 6, 7, 51, 130);
+        sprites::draw_sprite(62, 135, 6, 7, 51, 123);
+        sprites::draw_sprite(62, 144, 6, 7, 51, 130);
 
         // Draw log? todo
-    }
-
-    // Draw a general sprite from the main sprite sheet
-    fn draw_sprite(&self, x: i32, y: i32, width: u32, height: u32, src_x: u32, src_y: u32) {
-        blit_sub(
-            self.sheet.bytes,
-            x,
-            y,
-            width,
-            height,
-            src_x,
-            src_y,
-            self.sheet.width,
-            self.sheet.flags,
-        );
     }
 
     // Draw the background color
@@ -901,27 +936,6 @@ impl Game {
             //*DRAW_COLORS = 0b0011_0011_0011_0011;
         }
         rect(0, 0, 160, 120);
-    }
-
-    // Common functionality for rendering multi-sprite buildings (houses, church, bell, torch pole)
-    // mega_width are in bigsprite size (so for house this would be 2)
-    fn draw_multi_grid_sprite(
-        &self,
-        index: u8,
-        mega_width: u8,
-        src_x: u32,
-        src_y: u32,
-        dst_x: i32,
-        dst_y: i32,
-    ) {
-        let x_offset = (index % mega_width) as u32;
-        let y_offset = (index / mega_width) as u32;
-        self.draw_grid_sprite(x_offset * (CELL_SIZE as u32) + src_x, y_offset * (CELL_SIZE as u32) + src_y, dst_x, dst_y)
-    }
-
-    // Util function for grid sprites only
-    fn draw_grid_sprite(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32) {
-        self.draw_sprite(dst_x, dst_y, (CELL_SIZE as u32), (CELL_SIZE as u32), src_x, src_y)
     }
 
     // Draw a background grass sprite before rendering other sprites
@@ -943,16 +957,14 @@ impl Game {
         };
 
         if x == 0 {
-            blit_sub(
-                self.sheet.bytes,
+            sprites::draw_sprite_with_extra_flags(
                 dst.0,
                 dst.1,
                 10,
                 10,
                 60 + variant * 10,
                 110,
-                self.sheet.width,
-                self.sheet.flags | flip,
+                flip,
             );
         }
     }
@@ -962,7 +974,7 @@ impl Game {
         *DRAW_COLORS = 0b0100_0011_0010_0001;
 
         // Used for burning buildings
-        let burning_x_offset = (self.tick < 30) as u32 * 20;
+        
 
         for base_x in 0..GRID_LOCAL_SIZE_X {
             for base_y in 0..GRID_LOCAL_SIZE_Y {
@@ -985,7 +997,7 @@ impl Game {
                         };
                         */
 
-                        self.draw_multi_grid_sprite(*i, 2, src_x, 20, dst_x, dst_y);
+                        sprites::draw_multi_grid_sprite(*i, 2, src_x, 20, dst_x, dst_y);
                     }
 
                     CellState::House2(state, i) => {
@@ -998,32 +1010,30 @@ impl Game {
                         };
                         */
 
-                        self.draw_multi_grid_sprite(*i, 2, src_x, 60, dst_x, dst_y);
+                        sprites::draw_multi_grid_sprite(*i, 2, src_x, 60, dst_x, dst_y);
                     }
 
                     CellState::BigRock(i) => {
-                        self.draw_multi_grid_sprite(*i, 2, 0, 40, dst_x, dst_y)
+                        sprites::draw_multi_grid_sprite(*i, 2, 0, 40, dst_x, dst_y)
                     }
-                    CellState::Rock => self.draw_grid_sprite(30, 40, dst_x, dst_y),
+                    CellState::Rock => sprites::draw_grid_sprite(30, 40, dst_x, dst_y),
                     CellState::Lamppost(i) => {
-                        self.draw_multi_grid_sprite(*i, 1, 20, 40, dst_x, dst_y)
+                        sprites::draw_multi_grid_sprite(*i, 1, 20, 40, dst_x, dst_y)
                     }
-                    CellState::Bell => self.draw_grid_sprite(30, 50, dst_x, dst_y),
-                    CellState::Tree(i) => self.draw_multi_grid_sprite(*i, 2, 40, 40, dst_x, dst_y),
-                    CellState::Stand(i) => self.draw_multi_grid_sprite(*i, 2, 60, 40, dst_x, dst_y),
-                    CellState::Church(state, i) => {
-                        let src_x = 0;
-                        /*
+                    CellState::Bell => sprites::draw_grid_sprite(30, 50, dst_x, dst_y),
+                    CellState::Tree(i) => sprites::draw_multi_grid_sprite(*i, 2, 40, 40, dst_x, dst_y),
+                    CellState::Stand(i) => sprites::draw_multi_grid_sprite(*i, 2, 60, 40, dst_x, dst_y),
+                    CellState::Church(state, i, _) => {
                         let src_x = match state {
                             BuildingState::Solid => 0,
-                            BuildingState::Burning => 20 + burning_x_offset,
+                            BuildingState::Burning => 20 + ((self.tick % CHURCH_EXPLOSION_FREQUENCY_THING) < CHURCH_EXPLOSION_FREQUENCY_THING / 2) as u32 * 20,
                             BuildingState::Destroyed => 60,
                         };
-                        */
-                        self.draw_multi_grid_sprite(*i, 2, src_x, 80, dst_x, dst_y);
+
+                        sprites::draw_multi_grid_sprite(*i, 2, src_x, 80, dst_x, dst_y);
                     }
-                    CellState::Farm(i) => self.draw_multi_grid_sprite(*i, 2, 0, 110, dst_x, dst_y),
-                    CellState::Hay(i) => self.draw_multi_grid_sprite(*i, 2, 40, 110, dst_x, dst_y),
+                    CellState::Farm(i) => sprites::draw_multi_grid_sprite(*i, 2, 0, 110, dst_x, dst_y),
+                    CellState::Hay(i) => sprites::draw_multi_grid_sprite(*i, 2, 40, 110, dst_x, dst_y),
                     _ => continue,
                 }
             }
@@ -1040,45 +1050,15 @@ impl Game {
             let dst_y = *position_y as i32 - range_pixel_y.start as i32;
 
             match entity_type {
-                EntityType::IllagerClan(_type, state) => {
-                        // src x pos inside the sprite sheet that we will blit from
-                        let src_x = match _type {
-                            IllagerClan::Vindicator => 0,
-                            IllagerClan::Pillager => 10,
-                            IllagerClan::Evoker { .. } => 20,
-                            IllagerClan::Vex { .. } => 30,
-                        };
-
-                        // src y pos from the sprite sheet
-                        let src_y = match state {
-                            IllagerState::Idle => 0,
-                            IllagerState::Action => 10,
-                        };
-
-                        self.draw_grid_sprite(src_x, src_y, dst_x, dst_y)
-                    }
-
-                EntityType::VillagerClan(_type) => {
-                    // src x and src y positions inside the sprite sheet
-                    let (src_x, src_y) = match _type {
-                        VillagerClan::Villager => (40, 0),
-                        VillagerClan::Farmer => (50, 0),
-                        VillagerClan::Smith { .. } => (60, 0),
-                        VillagerClan::Golem(_, state) => match state {
-                            GolemState::Attack => (60, 10),
-                            GolemState::Broken => (70, 10),
-                            GolemState::Idle => (70, 0),
-                        },
-                    };
-
-                    self.draw_grid_sprite(src_x, src_y, dst_x, dst_y);
-                }
+                EntityType::IllagerClan(_type, state) => sprites::draw_illager_entity(dst_x, dst_y, _type, state),
+                EntityType::VillagerClan(_type) => sprites::draw_villager_entity(dst_x, dst_y, _type),
             }
             //Self::set_rect_colors(Color::Lightest, Color::Lightest);
             //rect(, , ENTITY_SIZE as u32, ENTITY_SIZE as u32);
         }
     }
 
+    
     // Draw the player cursors. Different colors assigned to each team
     unsafe fn draw_cursors(&self) {
         let index = self.current_player as usize;
@@ -1103,7 +1083,7 @@ impl Game {
                 if y > 1 { offset_y = -10 } else { offset_y2 = 10 }
             }
 
-            CellState::Church(_x, y) => {
+            CellState::Church(_x, y, _) => {
                 if y % 2 == 0 { offset_x2 = 10 } else { offset_x = -10 }
                 if y > 3 {
                     offset_y = -20
@@ -1126,7 +1106,7 @@ impl Game {
             _ => {}
         }
 
-        self.draw_sprite(
+        sprites::draw_sprite(
             posx * 10 - offset + offset_x,
             posy * 10 - offset + offset_y,
             3,
@@ -1136,7 +1116,7 @@ impl Game {
         );
         let bottom_posy = posy * 10 + 7 + offset + offset_y2;
         if bottom_posy <= 120 {
-            self.draw_sprite(
+            sprites::draw_sprite(
                 posx * 10 + 7 + offset + offset_x2,
                 bottom_posy,
                 3,
@@ -1181,6 +1161,11 @@ impl Game {
             }
         }
 
+        for Entity { position_x, position_y, .. } in self.entities.iter() {
+            Self::set_rect_colors(Color::Darker, Color::Darker);
+            rect(MINIMAP_PIXEL_OFFSET_X+(*position_x as i32 / CELL_SIZE as i32), MINIMAP_PIXEL_OFFSET_Y+(*position_y as i32 / CELL_SIZE as i32), 1, 1);
+        }
+
         for x in 0..GRID_SIZE_X {
             for y in 0..GRID_SIZE_Y {
                 let pos = grid_from_vec(x, y);
@@ -1190,20 +1175,18 @@ impl Game {
 
                 let color = match cell {
                     CellState::Empty => Color::Transparent,
-                    /*
-                    CellState::IllagerClan(_, _) => Color::Darker,
-                    CellState::VillagerClan(_) => Color::Darker,
-                    */
-                    CellState::House(BuildingState::Solid, _) | CellState::House2(BuildingState::Solid, _) | CellState::Church(BuildingState::Solid, _) => Color::Lighter,
+                    CellState::House(BuildingState::Solid, _) | CellState::House2(BuildingState::Solid, _) | CellState::Church(BuildingState::Solid, _, _) => Color::Lighter,
                     CellState::House(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
                     CellState::House2(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
-                    CellState::Church(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
-                    CellState::House(_, _) | CellState::House2(_, _) | CellState::Church(_, _) => Color::Darkest,
+                    CellState::Church(BuildingState::Burning, j, _) => flash_my_shit_twin(2, j, pos, self.tick),
+                    CellState::House(_, _) | CellState::House2(_, _) | CellState::Church(_, _, _) => Color::Darkest,
                     CellState::BigRock(_) | CellState::Rock | CellState::Lamppost(_) | CellState::Bell | CellState::Tree(_) | CellState::Stand(_) | CellState::Farm(_) | CellState::Hay(_) => Color::Lighter,
                 };
 
-                Self::set_rect_colors(color, color);
-                rect(MINIMAP_PIXEL_OFFSET_X+x as i32, MINIMAP_PIXEL_OFFSET_Y+y as i32, 1, 1);
+                if color != Color::Transparent {
+                    Self::set_rect_colors(color, color);
+                    rect(MINIMAP_PIXEL_OFFSET_X+x as i32, MINIMAP_PIXEL_OFFSET_Y+y as i32, 1, 1);
+                }
             }
         }
     }
