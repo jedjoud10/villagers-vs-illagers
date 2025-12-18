@@ -32,6 +32,7 @@ pub const GRID_LOCAL_SIZE_X: u8 = 16;
 pub const GRID_LOCAL_SIZE_Y: u8 = 12;
 
 // Gameplay constant
+pub const FRAMES_PER_TICK: u8 = 10; // number of frames that pass before a new tick
 pub const CURSOR_MOVEMENT_SPEED_INV: u8 = 7;
 
 // Village stuff goes first since P1 is controlling the villagers
@@ -82,12 +83,6 @@ pub enum BuildingState {
 #[derive(Clone, Copy)]
 pub enum CellState {
     Empty,
-
-    // Illager type and corresponding state
-    IllagerClan(IllagerClan, IllagerState),
-
-    // Villagers have no different state types
-    VillagerClan(VillagerClan),
 
     // 0, 1
     // 2, 3
@@ -142,6 +137,17 @@ enum Direction {
     SW, // Down-left
 }
 
+enum EntityType {
+    IllagerClan(IllagerClan, IllagerState),
+    VillagerClan(VillagerClan),
+}
+
+struct Entity {
+    entity_type: EntityType,
+    position_x: u16,
+    position_y: u16,
+}
+
 /*
 TODO:
 Sprites
@@ -170,6 +176,7 @@ struct Game {
     button_held: [bool; 2],
     action_possible: [bool; 2],
     particles: Vec<Particle>,
+    entities: Vec<Entity>,
 
     sheet: Sprite,
     current_selected_class: [u8; 2],
@@ -246,6 +253,7 @@ impl Game {
             goals: [u8::MAX; 4],
             sheet: sprite!("../packed/sprite.pak"),
             grid,
+            entities: Vec::new(),
             view_local_cameras: [(mid_x - GRID_LOCAL_SIZE_X / 2, mid_y - GRID_LOCAL_SIZE_Y / 2), (0, 0)],
         }
     }
@@ -273,7 +281,7 @@ impl Game {
                 self.current_player = 0;
             }
 
-            if self.tick == 0 {
+            if (self.tick % FRAMES_PER_TICK) == 0 {
                 self.update();
             }
 
@@ -285,6 +293,7 @@ impl Game {
             self.fetch_input();
             self.draw_background();
             self.draw_sprites();
+            self.draw_entities();
             self.draw_particles();
             self.draw_footer();
             self.draw_cursors();
@@ -426,17 +435,17 @@ impl Game {
         }
 
         const GAMEPADS: [*const u8; 2] = [GAMEPAD1, GAMEPAD2];
-        for index in 0..2 {
-            let last = self.old_gamepad[index];
-            let current = *GAMEPADS[index];
+        for player_index in 0..2 {
+            let last = self.old_gamepad[player_index];
+            let current = *GAMEPADS[player_index];
             let new = current & (last ^ current);
-            self.old_gamepad[index] = current;
-            self.new_gamepad[index] = new;
+            self.old_gamepad[player_index] = current;
+            self.new_gamepad[player_index] = new;
 
             // Move cursor on grid
-            let grid_pos: &mut u16 = &mut self.cursors[index];
-            let camera = &mut self.view_local_cameras[index];
-            let tick: &mut u8 = &mut self.cursor_timer[index];
+            let grid_pos: &mut u16 = &mut self.cursors[player_index];
+            let camera = &mut self.view_local_cameras[player_index];
+            let tick: &mut u8 = &mut self.cursor_timer[player_index];
             let cursor_tick_check: bool = *tick % CURSOR_MOVEMENT_SPEED_INV == 0;
             *tick = tick.wrapping_add(1);
 
@@ -530,7 +539,7 @@ impl Game {
                 *tick = 0;
             }
 
-            let selected = &mut self.current_selected_class[index];
+            let selected = &mut self.current_selected_class[player_index];
 
             // Cycle current selected class
             if new & BUTTON_2 != 0 {
@@ -542,9 +551,9 @@ impl Game {
             // Place currently selected class
             // Action possible permits this to happen,
             // This is determined somewhere else (TBD)
-            if new & BUTTON_1 != 0 && self.action_possible[index] {
+            if new & BUTTON_1 != 0 && self.action_possible[player_index] {
                 trace("player is doing action!");
-                let points: &mut u8 = &mut self.emeralds[index];
+                let points: &mut u8 = &mut self.emeralds[player_index];
 
                 // make sure the cell is empty so we can place our shit there
                 // this needs to be redone as villagers have to be placed by selecting a house and will come out of the bottom
@@ -552,12 +561,13 @@ impl Game {
                     // checked sub to make sure we don't cause a crash (also saves us from
                     // manually comparing to check if we have enough points to spend)
                     if let Some(new_points) =
-                        points.checked_sub(PRICES[*selected as usize + 3 * index])
+                        points.checked_sub(PRICES[*selected as usize + 3 * player_index])
                     {
                         // logic that handles setting new classes
                         // this makes things so much easier lol nice
-                        let cell: Option<&mut CellState> = if index == 1 && matches!(self.grid[*grid_pos as usize], CellState::Empty) { 
-                            Some(&mut self.grid[*grid_pos as usize])
+                        // `cell` is the cell index position of a cell in which we can spawn illager / villagers
+                        let cell: Option<u16> = if player_index == 1 && matches!(self.grid[*grid_pos as usize], CellState::Empty) { 
+                            Some(*grid_pos)
                         } else {
                             // pick a plausible spawning position on the outline of the building
                             trace("pick spawn location...");
@@ -581,27 +591,40 @@ impl Game {
                                 _ => None
                             };
 
-                            random_position_building_outline.map(|position| &mut self.grid[position as usize])
+                            random_position_building_outline
                         };
 
-                        // "index" is play index (where 0 is villager and 1 is illager)
+                        // "player_index" is player index (where 0 is villager and 1 is illager)
                         // "selected" is the selected class index (0..3)
-                        if let Some(cell_2) = cell { 
+                        if let Some(plausible_cell_index) = cell { 
+                            let (x, y) = vec_from_grid(plausible_cell_index);
+
                             *points = new_points;
-                            *cell_2 = match (index, selected) {
+                            let entity_type = match (player_index, selected) {
                                 // villager clan classes
-                                (0, 0) => CellState::VillagerClan(VillagerClan::Villager),
-                                (0, 1) => CellState::VillagerClan(VillagerClan::Farmer),
-                                (0, 2) => CellState::VillagerClan(VillagerClan::Smith(0)),
+                                (0, 0) => EntityType::VillagerClan(VillagerClan::Villager),
+                                (0, 1) => EntityType::VillagerClan(VillagerClan::Farmer),
+                                (0, 2) => EntityType::VillagerClan(VillagerClan::Smith(0)),
 
                                 // illager clan classes
-                                (1, 0) => CellState::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
-                                (1, 1) => CellState::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
-                                (1, 2) => CellState::IllagerClan(IllagerClan::Evoker(0), IllagerState::Idle),                                
+                                (1, 0) => EntityType::IllagerClan(IllagerClan::Vindicator, IllagerState::Idle),
+                                (1, 1) => EntityType::IllagerClan(IllagerClan::Pillager, IllagerState::Idle),
+                                (1, 2) => EntityType::IllagerClan(IllagerClan::Evoker(0), IllagerState::Idle), 
 
-                                _ => CellState::Empty,
+                                _ => unreachable!()
                             };
 
+                            // spawn the new entity at the given cell position
+                            let global_pos_x = x as u16 * CELL_SIZE as u16;
+                            let global_pos_y = y as u16 * CELL_SIZE as u16;
+                            let entity = Entity {
+                                position_x: global_pos_x,
+                                position_y: global_pos_y,
+                                entity_type: entity_type,
+                            };
+
+                            self.entities.push(entity);
+                            
                             play_me_some_tones______boy(Noise::Ting);
                         } else {
                             play_me_some_tones______boy(Noise::SixSeven);
@@ -612,11 +635,11 @@ impl Game {
                 }
             }
 
-            self.button_held[index] = current & BUTTON_1 != 0;
+            self.button_held[player_index] = current & BUTTON_1 != 0;
         }
     }
 
-    // Iterate on all pieces
+    // Called every tick
     unsafe fn update(&mut self) {
         fn swap_cells(src: u16, dst: u16, grid: &mut [CellState]) {
             let tmp = grid[src as usize];
@@ -674,6 +697,7 @@ impl Game {
 
         for (index, state) in self.grid.iter().enumerate() {
             match state {
+                /*
                 CellState::IllagerClan(id, _state) => match id {
                     IllagerClan::Vindicator => {
                         // check first for primary objectives (killing)
@@ -706,7 +730,7 @@ impl Game {
                         try_move(index as u16, pathfind(index as u16, 0, grid_ref), grid_ref);
                     }
                 },
-
+                */
                 CellState::House(BuildingState::Burning, j) | CellState::House2(BuildingState::Burning, j) => {
                     let (x, y) = vec_from_grid(index as u16);
                     let (x, y) = (x as i32, y as i32);
@@ -719,6 +743,11 @@ impl Game {
         }
 
         self.grid = suspicious_grid;
+
+        for Entity { position_x, position_y, .. } in self.entities.iter_mut() {
+            *position_x = position_x.saturating_add_signed(fastrand::i16(-2..=2));
+            *position_y = position_y.saturating_add_signed(fastrand::i16(-2..=2));
+        }
     }
 
     // Do particle effect shit
@@ -783,15 +812,15 @@ impl Game {
     // Draw a footer containing points, classes to summon, and current selected cell
     unsafe fn draw_footer(&mut self) {
         let class = self.current_selected_class[self.current_player as usize];
-        let mut clan_entity_counts: [u16; 2] = [0; 2];
-
-        for cell in self.grid.iter() {
-            match cell {
-                CellState::IllagerClan(_, _) => { clan_entity_counts[1] += 1 },
-                CellState::VillagerClan(_) => { clan_entity_counts[0] += 1 },
-                _ => {},
-            }
-        }
+        let self_clan_entity_count: u16 = {
+            self.entities.iter().map(|entity| {
+                if self.current_player == 0 {
+                    matches!(entity.entity_type, EntityType::VillagerClan(_))
+                } else {
+                    matches!(entity.entity_type, EntityType::IllagerClan(_, _))
+                }
+            }).count() as u16
+        };
         
         Self::set_rect_colors(Color::Lightest, Color::Darkest);
         rect(0, 120, 160, 35);
@@ -808,7 +837,7 @@ impl Game {
         );
 
         // DEBUG!!!!!!!!!!!! This shows currently selected class lol (not meant to)
-        text(buffer.format(clan_entity_counts[self.current_player as usize]), 71, 144);
+        text(buffer.format(self_clan_entity_count), 71, 144);
 
         *DRAW_COLORS = 0b0100_0011_0010_0001;
         let button = self.button_held[self.current_player as usize];
@@ -946,40 +975,6 @@ impl Game {
                 self.draw_background_grass((base_x, base_y), (offset_x, offset_y), (dst_x, dst_y));
 
                 match state {
-                    CellState::IllagerClan(_type, state) => {
-                        // src x pos inside the sprite sheet that we will blit from
-                        let src_x = match _type {
-                            IllagerClan::Vindicator => 0,
-                            IllagerClan::Pillager => 10,
-                            IllagerClan::Evoker { .. } => 20,
-                            IllagerClan::Vex { .. } => 30,
-                        };
-
-                        // src y pos from the sprite sheet
-                        let src_y = match state {
-                            IllagerState::Idle => 0,
-                            IllagerState::Action => 10,
-                        };
-
-                        self.draw_grid_sprite(src_x, src_y, dst_x, dst_y)
-                    }
-
-                    CellState::VillagerClan(_type) => {
-                        // src x and src y positions inside the sprite sheet
-                        let (src_x, src_y) = match _type {
-                            VillagerClan::Villager => (40, 0),
-                            VillagerClan::Farmer => (50, 0),
-                            VillagerClan::Smith { .. } => (60, 0),
-                            VillagerClan::Golem(_, state) => match state {
-                                GolemState::Attack => (60, 10),
-                                GolemState::Broken => (70, 10),
-                                GolemState::Idle => (70, 0),
-                            },
-                        };
-
-                        self.draw_grid_sprite(src_x, src_y, dst_x, dst_y);
-                    }
-
                     CellState::House(state, i) => {
                         let src_x = 0;
                         /*
@@ -1032,6 +1027,55 @@ impl Game {
                     _ => continue,
                 }
             }
+        }
+    }
+
+    // Draw entities
+    unsafe fn draw_entities(&self) {
+        let (offset_x, offset_y) = self.view_local_cameras[self.current_player as usize];
+        let range_pixel_x = ((offset_x as u16 * CELL_SIZE as u16))..(((offset_x + GRID_LOCAL_SIZE_X) as u16 * CELL_SIZE as u16));
+        let range_pixel_y = ((offset_y as u16 * CELL_SIZE as u16))..(((offset_y + GRID_LOCAL_SIZE_Y) as u16 * CELL_SIZE as u16));
+        for Entity { position_x, position_y, entity_type } in self.entities.iter() {
+            let dst_x = *position_x as i32 - range_pixel_x.start as i32;
+            let dst_y = *position_y as i32 - range_pixel_y.start as i32;
+
+            match entity_type {
+                EntityType::IllagerClan(_type, state) => {
+                        // src x pos inside the sprite sheet that we will blit from
+                        let src_x = match _type {
+                            IllagerClan::Vindicator => 0,
+                            IllagerClan::Pillager => 10,
+                            IllagerClan::Evoker { .. } => 20,
+                            IllagerClan::Vex { .. } => 30,
+                        };
+
+                        // src y pos from the sprite sheet
+                        let src_y = match state {
+                            IllagerState::Idle => 0,
+                            IllagerState::Action => 10,
+                        };
+
+                        self.draw_grid_sprite(src_x, src_y, dst_x, dst_y)
+                    }
+
+                EntityType::VillagerClan(_type) => {
+                    // src x and src y positions inside the sprite sheet
+                    let (src_x, src_y) = match _type {
+                        VillagerClan::Villager => (40, 0),
+                        VillagerClan::Farmer => (50, 0),
+                        VillagerClan::Smith { .. } => (60, 0),
+                        VillagerClan::Golem(_, state) => match state {
+                            GolemState::Attack => (60, 10),
+                            GolemState::Broken => (70, 10),
+                            GolemState::Idle => (70, 0),
+                        },
+                    };
+
+                    self.draw_grid_sprite(src_x, src_y, dst_x, dst_y);
+                }
+            }
+            //Self::set_rect_colors(Color::Lightest, Color::Lightest);
+            //rect(, , ENTITY_SIZE as u32, ENTITY_SIZE as u32);
         }
     }
 
@@ -1146,8 +1190,10 @@ impl Game {
 
                 let color = match cell {
                     CellState::Empty => Color::Transparent,
+                    /*
                     CellState::IllagerClan(_, _) => Color::Darker,
                     CellState::VillagerClan(_) => Color::Darker,
+                    */
                     CellState::House(BuildingState::Solid, _) | CellState::House2(BuildingState::Solid, _) | CellState::Church(BuildingState::Solid, _) => Color::Lighter,
                     CellState::House(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
                     CellState::House2(BuildingState::Burning, j) => flash_my_shit_twin(2, j, pos, self.tick),
